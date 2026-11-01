@@ -11,7 +11,7 @@ import (
 	"github.com/Deliberated/Loot-Gobbler-Server/internal/store"
 )
 
-// The loot caravan: per guild member the bags they opened in a time range (by color), the items in them and the
+// The loot caravan: per guild member the items they found in a time range (counted by bag color), the items and the
 // character they played most in that range. The client draws each member on a wagon piled with their items.
 
 const (
@@ -39,8 +39,8 @@ type caravanCharacter struct {
 
 type caravanMember struct {
 	guildMember
-	Bags      map[string]int    `json:"bags"`  // bag color ("White", "Orange", ...; boosted counts as its color) -> bags
-	Total     int               `json:"total"` // all bags
+	ByBag     map[string]int    `json:"byBag"` // bag color ("White", "Orange", ...; boosted counts as its color) -> items
+	Total     int               `json:"total"` // all items found
 	Items     []caravanItem     `json:"items"` // newest first, at most 120
 	LastDrop  string            `json:"lastDrop,omitempty"`
 	Character *caravanCharacter `json:"character,omitempty"` // most played in the range; nil if no character is known
@@ -92,10 +92,9 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		row := caravanMember{guildMember: m, Bags: map[string]int{}, Items: []caravanItem{}}
+		row := caravanMember{guildMember: m, ByBag: map[string]int{}, Items: []caravanItem{}}
 		var coll collectionDoc
 		if json.Unmarshal(items["collection"].Data, &coll) == nil {
-			bags := map[string]bool{} // items found in the same second, place and bag came from one bag
 			for id, e := range coll {
 				itemID, err := strconv.Atoi(id)
 				if err != nil {
@@ -106,11 +105,8 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 						continue
 					}
 					color := bagColor(f.Bag)
-					if key := f.Time + "|" + f.Where + "|" + color; !bags[key] {
-						bags[key] = true
-						row.Bags[color]++
-						row.Total++
-					}
+					row.ByBag[color]++
+					row.Total++
 					row.Items = append(row.Items, caravanItem{ItemID: itemID, Bag: color, Time: f.Time, Where: f.Where})
 				}
 			}

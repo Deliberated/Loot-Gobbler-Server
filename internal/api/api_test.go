@@ -484,7 +484,7 @@ func TestGuildCaravan(t *testing.T) {
 	find := func(time, source, bag string) map[string]any {
 		return map[string]any{"time": time, "source": source, "where": "Lost Halls", "bag": bag}
 	}
-	same := at(time.Hour) // two items out of one white bag
+	same := at(time.Hour) // two items out of one white bag: both count
 	bob.put("collection", map[string]any{
 		"100": map[string]any{"count": 3, "history": []any{find(same, "drop", "White"), find(at(40*24*time.Hour), "drop", "White"),
 			find(at(2*time.Hour), "vault", "")}},
@@ -502,9 +502,9 @@ func TestGuildCaravan(t *testing.T) {
 	week := bob.expect(200, "GET", "/api/v1/guild/caravan", nil).body
 	members := week["members"].([]any)
 	first := members[0].(map[string]any)
-	bags := first["bags"].(map[string]any)
-	if week["range"] != "week" || len(members) != 2 || first["ign"] != "Bob" || first["total"] != 2.0 ||
-		bags["White"] != 1.0 || bags["Orange"] != 1.0 || len(first["items"].([]any)) != 3 {
+	byBag := first["byBag"].(map[string]any)
+	if week["range"] != "week" || len(members) != 2 || first["ign"] != "Bob" || first["total"] != 3.0 ||
+		byBag["White"] != 2.0 || byBag["Orange"] != 1.0 || len(first["items"].([]any)) != 3 {
 		t.Fatalf("week: %v", week)
 	}
 	if c := first["character"].(map[string]any); c["className"] != "Knight" { // gained 900 vs 50 this week
@@ -514,7 +514,7 @@ func TestGuildCaravan(t *testing.T) {
 		t.Fatalf("member without data: %v", hoster)
 	}
 	all := bob.expect(200, "GET", "/api/v1/guild/caravan?range=all", nil).body["members"].([]any)[0].(map[string]any)
-	if all["total"] != 3.0 {
+	if all["total"] != 4.0 {
 		t.Fatalf("all time: %v", all)
 	}
 	bob.expect(400, "GET", "/api/v1/guild/caravan?range=year", nil)
