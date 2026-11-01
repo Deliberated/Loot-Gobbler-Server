@@ -89,6 +89,55 @@ func PutData(ctx context.Context, q Querier, userID int64, kind string, revision
 	return res.LastInsertId()
 }
 
+// MemberDoc is one active user's document of one kind.
+type MemberDoc struct {
+	UserID    int64
+	IGN       string
+	UpdatedAt int64
+	Data      json.RawMessage
+}
+
+// DocsOfKind returns the document of the given kind of every active user who has one.
+func DocsOfKind(ctx context.Context, q Querier, kind string) ([]MemberDoc, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT d.user_id, u.ign, d.updated_at, d.data
+		FROM user_data d JOIN users u ON u.id = d.user_id
+		WHERE d.kind = ? AND u.status = ?`, kind, StatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var docs []MemberDoc
+	for rows.Next() {
+		var d MemberDoc
+		var data string
+		if err := rows.Scan(&d.UserID, &d.IGN, &d.UpdatedAt, &data); err != nil {
+			return nil, err
+		}
+		d.Data = json.RawMessage(data)
+		docs = append(docs, d)
+	}
+	return docs, rows.Err()
+}
+
+// LastActivity is when each user last uploaded anything (epoch ms), by user id.
+func LastActivity(ctx context.Context, q Querier) (map[int64]int64, error) {
+	rows, err := q.QueryContext(ctx, "SELECT user_id, MAX(updated_at) FROM user_data GROUP BY user_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	last := map[int64]int64{}
+	for rows.Next() {
+		var id, at int64
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		last[id] = at
+	}
+	return last, rows.Err()
+}
+
 // LatestSeq is the sequence number of the newest change (0 if none).
 func LatestSeq(ctx context.Context, q Querier) (int64, error) {
 	var seq int64

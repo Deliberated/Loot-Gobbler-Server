@@ -118,6 +118,19 @@ PUT /me/data/collection
 - `409 revision_conflict` + `"current": {"revision", "updatedAt", "data"}`: someone (for example the same player on another PC) wrote in between. Merge `current.data` with your local changes and retry with `baseRevision: current.revision`.
 - `413 too_large` above 16 MiB
 
+## Guild views
+
+Players are grouped by the in-game guild their client reports in the `profile` document (`{"ign", "guild", "guildRank", "updatedAt"}`, synced like any other kind). Guild names are compared ignoring case and are shown as the highest-ranked member spells them. Everything is computed from members' synced documents, and each player only sees their own guild. Until a player's guild is known, these endpoints answer `409 no_guild`.
+
+| Method | Path | Result |
+|---|---|---|
+| GET | `/guild` | `{"guild", "members": [{"id", "ign", "guildRank", "lastActive"}]}` |
+| GET | `/guild/leaderboard` | `{"guild", "members": [...]}`: each member plus `items` (different items), `finds` (all copies), `fame` (living characters), `exalts`, `characters` (living), `maxed` (living with 8/8). Sorted by `items`. |
+| GET | `/guild/drops?limit=50` | `{"guild", "drops": [{"userId", "ign", "itemId", "time", "source", "enchants", "enchantIds", "where", "bag"}]}`: newest drops first, at most 200. Only drops, no vault/inventory sightings. `time` is the dropping player's local time. |
+| GET | `/guild/members/{id}` | `{"guild", "member": <leaderboard row>, "characters": {...}, "exalts": {...}, "collection": {"<item id>": count}}`. Characters are as the client stores them, without `samples`, `slots` and `slotEnchantIds`. `404` for players outside your guild. |
+
+`guildRank` is the game's value: 0 initiate, 10 member, 20 officer, 30 leader, 40 founder.
+
 ## Moderation (moderator or admin)
 
 | Method | Path | Who | Result |

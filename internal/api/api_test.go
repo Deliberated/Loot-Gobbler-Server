@@ -393,6 +393,85 @@ func TestDataSync(t *testing.T) {
 	pc1.expect(400, "PUT", "/api/v1/me/data/pets", map[string]any{"data": 1})
 }
 
+// put uploads a new document for the client's account.
+func (c *client) put(kind string, data any) {
+	c.e.t.Helper()
+	c.expect(200, "PUT", "/api/v1/me/data/"+kind, map[string]any{"baseRevision": 0, "data": data})
+}
+
+func TestGuildViews(t *testing.T) {
+	e := newEnv(t, nil)
+	admin := e.newAdmin()
+	bob := e.newUser(admin, "Bob", "203.0.113.2")
+	carl := e.newUser(admin, "Carl", "203.0.113.3")
+	dave := e.newUser(admin, "Dave", "203.0.113.4") // another guild
+
+	bob.expect(409, "GET", "/api/v1/guild", nil) // no profile yet
+
+	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "gobblers", "guildRank": 10}) // case doesn't matter
+	carl.put("profile", map[string]any{"ign": "Carl", "guild": "Gobblers", "guildRank": 20})
+	dave.put("profile", map[string]any{"ign": "Dave", "guild": "Others", "guildRank": 40})
+
+	find := func(time, source string) map[string]any {
+		return map[string]any{"time": time, "source": source, "enchants": 1, "where": "Lost Halls", "bag": "white"}
+	}
+	bob.put("collection", map[string]any{
+		"100": map[string]any{"count": 2, "history": []any{find("2026-11-01T10:00:00", "drop"), find("2026-11-01T12:00:00", "vault")}},
+		"200": map[string]any{"count": 1, "history": []any{find("2026-11-01T11:00:00", "drop")}},
+	})
+	carl.put("collection", map[string]any{
+		"100": map[string]any{"count": 1, "history": []any{find("2026-11-01T13:00:00", "drop")}},
+	})
+	dave.put("collection", map[string]any{
+		"300": map[string]any{"count": 1, "history": []any{find("2026-11-01T14:00:00", "drop")}},
+	})
+	bob.put("characters", map[string]any{
+		"1": map[string]any{"charId": 1, "fame": 1000, "alive": true, "statsMaxed": 8, "samples": []any{map[string]any{"t": 1, "fame": 1}}},
+		"2": map[string]any{"charId": 2, "fame": 500, "alive": false},
+	})
+	bob.put("exalts", map[string]any{"805": []int{75, 75, 5, 0, 0, 0, 0, 0}}) // 5 + 5 + 1
+
+	g := bob.expect(200, "GET", "/api/v1/guild", nil).body
+	if g["guild"] != "Gobblers" || len(g["members"].([]any)) != 3 {
+		t.Fatalf("guild: %v", g)
+	}
+
+	lb := bob.expect(200, "GET", "/api/v1/guild/leaderboard", nil).body["members"].([]any)
+	first := lb[0].(map[string]any)
+	if first["ign"] != "Bob" || first["items"] != 2.0 || first["finds"] != 3.0 || first["fame"] != 1000.0 ||
+		first["exalts"] != 11.0 || first["characters"] != 1.0 || first["maxed"] != 1.0 {
+		t.Fatalf("Bob's leaderboard row: %v", first)
+	}
+	for _, row := range lb {
+		if row.(map[string]any)["ign"] == "Dave" {
+			t.Fatal("Dave is in another guild")
+		}
+	}
+
+	drops := carl.expect(200, "GET", "/api/v1/guild/drops", nil).body["drops"].([]any)
+	if len(drops) != 3 { // Bob's two drops and Carl's one; Bob's vault sighting and Dave's drop are not shown
+		t.Fatalf("drops: %v", drops)
+	}
+	if d := drops[0].(map[string]any); d["ign"] != "Carl" || d["itemId"] != 100.0 {
+		t.Fatalf("newest drop should be Carl's: %v", d)
+	}
+	if one := carl.expect(200, "GET", "/api/v1/guild/drops?limit=1", nil).body["drops"].([]any); len(one) != 1 {
+		t.Fatalf("limit=1 gave %d", len(one))
+	}
+
+	bobID := itoa(int64(first["id"].(float64)))
+	m := carl.expect(200, "GET", "/api/v1/guild/members/"+bobID, nil).body
+	chars := m["characters"].(map[string]any)
+	if _, hasSamples := chars["1"].(map[string]any)["samples"]; hasSamples || len(chars) != 2 {
+		t.Fatalf("member characters should be there without samples: %v", chars)
+	}
+	if m["collection"].(map[string]any)["100"] != 2.0 {
+		t.Fatalf("member collection: %v", m["collection"])
+	}
+	dave.expect(404, "GET", "/api/v1/guild/members/"+bobID, nil) // not Dave's guild
+}
+
 func TestPasswordChangeSignsOutOtherSessions(t *testing.T) {
 	e := newEnv(t, nil)
 	admin := e.newAdmin()
