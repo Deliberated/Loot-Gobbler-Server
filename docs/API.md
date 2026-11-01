@@ -129,6 +129,8 @@ Players are grouped by the in-game guild their client reports in the `profile` d
 | GET | `/guild/drops?limit=50` | `{"guild", "drops": [{"userId", "ign", "itemId", "time", "source", "enchants", "enchantIds", "where", "bag"}]}`: newest drops first, at most 200. Only drops, no vault/inventory sightings. `time` is the dropping player's local time. |
 | GET | `/guild/members/{id}` | `{"guild", "member": <leaderboard row>, "characters": {...}, "exalts": {...}, "collection": {"<item id>": count}}`. Characters are as the client stores them, without `samples`, `slots` and `slotEnchantIds`. `404` for players outside your guild. |
 
+| GET | `/guild/caravan?range=week` | `{"guild", "range", "members": [...]}`: each member (`id`, `ign`, `guildRank`, `lastActive`) plus `bags` (`{"White": 2, "Orange": 1, ...}`; boosted bags count as their color, `Other` when unknown), `total` (all bags), `items` (`[{"itemId", "bag", "time", "where"}]`, newest first, at most 120), `lastDrop` and `character` (`{"classType", "className", "skin", "tex1", "tex2", "fame"}`, the living character with the most fame gained in the range, else the one played last; missing if none is known). `range` is `week` (7 days, the default), `month` (30 days) or `all`. Drops only; items found in the same second, place and bag count as one bag. Sorted by `total`. |
+
 `guildRank` is the game's value: 0 initiate, 10 member, 20 officer, 30 leader, 40 founder.
 
 ## Moderation (moderator or admin)

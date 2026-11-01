@@ -472,6 +472,54 @@ func TestGuildViews(t *testing.T) {
 	dave.expect(404, "GET", "/api/v1/guild/members/"+bobID, nil) // not Dave's guild
 }
 
+func TestGuildCaravan(t *testing.T) {
+	e := newEnv(t, nil)
+	admin := e.newAdmin()
+	bob := e.newUser(admin, "Bob", "203.0.113.2")
+	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10})
+
+	now := time.Now().UTC()
+	at := func(ago time.Duration) string { return now.Add(-ago).Format("2006-01-02T15:04:05") }
+	find := func(time, source, bag string) map[string]any {
+		return map[string]any{"time": time, "source": source, "where": "Lost Halls", "bag": bag}
+	}
+	same := at(time.Hour) // two items out of one white bag
+	bob.put("collection", map[string]any{
+		"100": map[string]any{"count": 3, "history": []any{find(same, "drop", "White"), find(at(40*24*time.Hour), "drop", "White"),
+			find(at(2*time.Hour), "vault", "")}},
+		"200": map[string]any{"count": 2, "history": []any{find(same, "drop", "White"), find(at(3*time.Hour), "drop", "Boosted Orange")}},
+	})
+	day := time.Hour.Milliseconds() * 24
+	ms := now.UnixMilli()
+	bob.put("characters", map[string]any{
+		"1": map[string]any{"classType": 782, "className": "Wizard", "alive": true, "lastPlayed": ms,
+			"samples": []any{map[string]any{"t": ms - day, "fame": 100}, map[string]any{"t": ms, "fame": 150}}},
+		"2": map[string]any{"classType": 797, "className": "Knight", "alive": true, "lastPlayed": ms - day,
+			"samples": []any{map[string]any{"t": ms - 2*day, "fame": 0}, map[string]any{"t": ms - day, "fame": 900}}},
+	})
+
+	week := bob.expect(200, "GET", "/api/v1/guild/caravan", nil).body
+	members := week["members"].([]any)
+	first := members[0].(map[string]any)
+	bags := first["bags"].(map[string]any)
+	if week["range"] != "week" || len(members) != 2 || first["ign"] != "Bob" || first["total"] != 2.0 ||
+		bags["White"] != 1.0 || bags["Orange"] != 1.0 || len(first["items"].([]any)) != 3 {
+		t.Fatalf("week: %v", week)
+	}
+	if c := first["character"].(map[string]any); c["className"] != "Knight" { // gained 900 vs 50 this week
+		t.Fatalf("most played: %v", c)
+	}
+	if hoster := members[1].(map[string]any); hoster["total"] != 0.0 || hoster["character"] != nil {
+		t.Fatalf("member without data: %v", hoster)
+	}
+	all := bob.expect(200, "GET", "/api/v1/guild/caravan?range=all", nil).body["members"].([]any)[0].(map[string]any)
+	if all["total"] != 3.0 {
+		t.Fatalf("all time: %v", all)
+	}
+	bob.expect(400, "GET", "/api/v1/guild/caravan?range=year", nil)
+}
+
 func TestPasswordChangeSignsOutOtherSessions(t *testing.T) {
 	e := newEnv(t, nil)
 	admin := e.newAdmin()
