@@ -125,13 +125,40 @@ Players are grouped by the in-game guild their client reports in the `profile` d
 | Method | Path | Result |
 |---|---|---|
 | GET | `/guild` | `{"guild", "members": [{"id", "ign", "guildRank", "lastActive"}]}` |
-| GET | `/guild/leaderboard` | `{"guild", "members": [...]}`: each member plus `items` (different items), `finds` (all copies), `fame` (living characters), `exalts`, `characters` (living), `maxed` (living with 8/8). Sorted by `items`. |
+| GET | `/guild/leaderboard` | `{"guild", "members": [...]}`: each member plus `points` (quest points this month), `items` (different items), `finds` (all copies), `fame` (living characters), `exalts`, `characters` (living), `maxed` (living with 8/8). Sorted by `items`. |
 | GET | `/guild/drops?limit=50` | `{"guild", "drops": [{"userId", "ign", "itemId", "time", "source", "enchants", "enchantIds", "where", "bag"}]}`: newest drops first, at most 200. Only drops, no vault/inventory sightings. `time` is the dropping player's local time. |
 | GET | `/guild/members/{id}` | `{"guild", "member": <leaderboard row>, "characters": {...}, "exalts": {...}, "collection": {"<item id>": count}}`. Characters are as the client stores them, without `samples`, `slots` and `slotEnchantIds`. `404` for players outside your guild. |
 
-| GET | `/guild/caravan?range=week` | `{"guild", "range", "members": [...]}`: each member (`id`, `ign`, `guildRank`, `lastActive`) plus `bags` (`{"White": 2, "Orange": 1, ...}`; boosted bags count as their color, `Other` when unknown), `total` (all bags), `items` (`[{"itemId", "bag", "time", "where"}]`, newest first, at most 120), `lastDrop` and `character` (`{"classType", "className", "skin", "tex1", "tex2", "fame"}`, the living character with the most fame gained in the range, else the one played last; missing if none is known). `range` is `week` (7 days, the default), `month` (30 days) or `all`. Drops only; items found in the same second, place and bag count as one bag. Sorted by `total`. |
+| GET | `/guild/caravan?range=week` | `{"guild", "range", "members": [...]}`: each member (`id`, `ign`, `guildRank`, `lastActive`) plus `byBag` (items found per bag color: `{"White": 2, "Orange": 1, ...}`; boosted bags count as their color, `Other` when unknown), `total` (all items found), `items` (`[{"itemId", "bag", "time", "where"}]`, newest first, at most 120), `lastDrop` and `character` (`{"classType", "className", "skin", "tex1", "tex2", "fame"}`, the living character with the most fame gained in the range, else the one played last; missing if none is known). `range` is `week` (7 days, the default), `month` (30 days) or `all`. Drops only; every item counts, also several out of one bag. Sorted by `total`. |
+| GET | `/guild/questmaps?limit=10` | `{"guild", "now", "current", "past": [...]}`: the guild's quest maps, newest first (`past` at most `limit`, up to 50). A map is `{"id", "name", "style", "variant", "dungeons": [names in order], "clears": [{"userId", "ign", "at"}], "startsAt", "endsAt", "completedAt"}`. `style` is `parchment`, `hex`, `overworld`, `oryx`, `constellation`, `neon`, `adventure`, `hunt` or `hellforge`; `variant` is its color variation 0-3. When there is no map or the last one has ended, a new one is rolled: random style, variant, 3-8 dungeons (easiest first) and 6-12 days. It never repeats the style or the color family (ice, fire, green, ...) of any of the last 3 maps. Stage *n* is cleared by the earliest run of its dungeon by any member (from their synced `dps_history`, not the guild hall, with their own boss damage) that started after stage *n-1* was cleared and before the map ended. |
 
 `guildRank` is the game's value: 0 initiate, 10 member, 20 officer, 30 leader, 40 founder.
+
+## Quests
+
+Every week, from Monday 00:00 UTC, each player rolls up to 3 **personal quests** from the accepted personal quests. Each guild gets 1 **guild quest**, the same for all its members. Progress is computed from what players sync, counting only what happened during that week. A finished quest gives its points once: personal quests to the player, guild quests to every member who contributed. Points count per calendar month (UTC), and the leaderboard has a `points` column for the current month.
+
+The server checks quests whenever someone opens their quests or the leaderboard. It also checks the previous week once more, so data synced just after Monday still counts.
+
+Quest types (`params.count` is required; `dungeon` is part of the dungeon name, ignoring case):
+
+| `type` | Counts | Optional params |
+|---|---|---|
+| `drops` | UT/ST drops (not vault/inventory sightings) | `dungeon`, `minEnchants` (0–4), `bag` (color) |
+| `new_items` | items whose first find is in the week | |
+| `dungeon_clears` | dungeon runs from the DPS history (not the guild hall) | `dungeon` |
+| `boss_damage` | your damage to bosses | `dungeon` |
+| `fame` | fame gained, over all characters | |
+
+Finds carry `at` (exact time, epoch ms) since client 0.5; older finds without it fall back to their local `time`, read as UTC.
+
+| Method | Path | Who | Result |
+|---|---|---|---|
+| GET | `/quests` | any | `{"weekStart", "weekEnd", "personal": [quest], "guild", "guildQuests": [quest], "period": "2026-11", "points"}`. A quest is `{"id", "title", "type", "params", "points", "progress", "target", "completedAt"}`; guild quests also have `contributors` (`[{"ign", "amount"}]`, most first). `guild` is missing while the player's guild is unknown; personal quests still work. |
+| POST | `/quests/suggestions` | any | `{"title" (optional, made from the rest), "type", "params", "scope": "personal" or "guild", "points" (optional)}` → `201` + the suggested quest, waiting for an admin. At most 10 waiting per player (`409 too_many_suggestions`). |
+| GET | `/admin/quests?status=` | admin | `{"quests": [{"id", "title", "type", "params", "scope", "points", "status", "proposedBy", "createdAt", "decidedBy", "decidedAt"}]}`; `status` is `pending`, `approved` or `denied` (all if missing). New servers start with 12 built-in suggestions (`proposedBy` empty). |
+| POST | `/admin/quests/{id}/approve` | admin | `{"scope": "personal" or "guild", "points": 1–500 (0 = keep)}` → `204`. The quest joins the weekly rotation; empty slots of the current week fill up on the next check. |
+| POST | `/admin/quests/{id}/deny` | admin | `204`. Denies a suggestion, or takes an accepted quest out of the rotation (quests already running this week keep going). |
 
 ## Moderation (moderator or admin)
 

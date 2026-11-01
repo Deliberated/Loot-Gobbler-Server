@@ -107,6 +107,13 @@ func (s *Server) routes() {
 	s.handle("GET /api/v1/guild/drops", s.guildDrops)
 	s.handle("GET /api/v1/guild/members/{id}", s.guildMemberProfile)
 	s.handle("GET /api/v1/guild/caravan", s.guildCaravan)
+	s.handle("GET /api/v1/guild/questmaps", s.guildQuestMaps)
+
+	s.handle("GET /api/v1/quests", s.getQuests)
+	s.handle("POST /api/v1/quests/suggestions", s.suggestQuest)
+	s.handle("GET /api/v1/admin/quests", s.listQuestPool)
+	s.handle("POST /api/v1/admin/quests/{id}/approve", s.approveQuest)
+	s.handle("POST /api/v1/admin/quests/{id}/deny", s.denyQuest)
 
 	s.handle("GET /api/v1/admin/requests", s.listRequests)
 	s.handle("POST /api/v1/admin/requests/{id}/accept", s.acceptRequest)

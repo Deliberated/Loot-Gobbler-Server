@@ -44,12 +44,14 @@ type guildResponse struct {
 
 // The parts of the synced documents the guild views read.
 type collectionDoc map[string]struct {
+	First   string    `json:"first"`
 	Count   int       `json:"count"`
 	History []findDoc `json:"history"`
 }
 
 type findDoc struct {
 	Time       string `json:"time"`
+	At         int64  `json:"at,omitempty"` // exact time (epoch ms), sent by newer clients
 	Source     string `json:"source"`
 	Enchants   int    `json:"enchants"`
 	Where      string `json:"where"`
@@ -128,6 +130,7 @@ type leaderRow struct {
 	Exalts     int   `json:"exalts"`     // exaltations over all classes
 	Characters int   `json:"characters"` // living characters
 	Maxed      int   `json:"maxed"`      // living characters with all 8 stats maxed
+	Points     int   `json:"points"`     // quest points this month
 }
 
 type leaderboardResponse struct {
@@ -189,12 +192,33 @@ func (s *Server) guildLeaderboard(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	// check everyone's quests first, so the points are up to date
+	acts, err := s.guildActivities(ctx, user.ID, members)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	for _, m := range members {
+		g := ""
+		if m.ID == user.ID {
+			g = guild // the guild quests once
+		}
+		if _, err := s.settle(ctx, m.ID, g, members, acts, now); err != nil {
+			return err
+		}
+	}
+	month := monthStart(now)
+	points, err := store.PointsBetween(ctx, s.store.DB(), month.UnixMilli(), month.AddDate(0, 1, 0).UnixMilli())
+	if err != nil {
+		return err
+	}
 	rows := make([]leaderRow, 0, len(members))
 	for _, m := range members {
 		row, err := s.stats(ctx, m)
 		if err != nil {
 			return err
 		}
+		row.Points = points[m.ID]
 		rows = append(rows, row)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Items > rows[j].Items })
