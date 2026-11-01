@@ -1,0 +1,30 @@
+# Loot Gobbler server. Settings come from .env next to this file (copy .env.example to .env).
+#   Start:   docker compose up -d
+#   Update:  docker compose pull && docker compose up -d
+#   Logs:    docker logs -f loot-gobbler
+services:
+  loot-gobbler:
+    image: ghcr.io/deliberated/loot-gobbler-server:${IMAGE_TAG:-latest}
+    container_name: loot-gobbler
+    restart: unless-stopped
+    environment:
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env to your domain}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
+    volumes:
+      - loot-gobbler-data:/data
+    ports:
+      # Point nginx proxy manager at http://<this machine's IP>:${HOST_PORT}. If NPM runs in Docker on this
+      # machine, you can instead remove this, uncomment the networks parts below and forward to
+      # http://loot-gobbler:8080.
+      - "${HOST_PORT:-8080}:8080"
+#    networks:
+#      - npm
+
+volumes:
+  loot-gobbler-data:
+
+#networks:
+#  npm:
+#    external: true
+#    name: <the network nginx proxy manager is in, see: docker network ls>

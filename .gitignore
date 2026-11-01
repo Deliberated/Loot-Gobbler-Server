@@ -1,0 +1,12 @@
+# Server settings for docker compose (template: .env.example)
+.env
+# Local run data (DATA_DIR defaults to ./data)
+/data/
+# Built binaries
+/lootgobbler
+/lootgobbler.exe
+*.db
+*.db-shm
+*.db-wal
+.idea/
+.vscode/
