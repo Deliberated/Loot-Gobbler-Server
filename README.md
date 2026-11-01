@@ -91,6 +91,19 @@ Set these in `.env`. `HOST_PORT` and `IMAGE_TAG` are used only by the compose fi
 | `PORT` | `8080` | Listen port inside the container |
 | `DATA_DIR` | `/data` in Docker, `./data` otherwise | Where the database lives |
 | `SESSION_DAYS` | `30` | A login expires after this many days without use |
+| `LOG_LEVEL` | `info` | `info`: logins, registrations, admin actions and every sync (download, upload, conflict). `debug`: also every request with status, duration and IP. `warn`: only problems. |
+
+### Reading the log
+
+`docker logs -f loot-gobbler` follows the log live. At `info`, syncing looks like this:
+
+```
+level=INFO msg="sync download" ign=Hoster what=data kinds=characters@1,collection@3,exalts@2,pets@1 size=58.2 KiB
+level=INFO msg="sync upload" ign=Hoster kind=collection revision=4 size=24.8 KiB
+level=INFO msg="sync conflict, client will merge and retry" ign=Hoster kind=collection clientRevision=3 serverRevision=4
+```
+
+A player's client downloads everything after logging in and uploads changed data at most once a minute while they play. A conflict means two of the player's PCs uploaded at the same time. The client merges and retries on its own, so it's not an error.
 
 ## Brute-force protection
 

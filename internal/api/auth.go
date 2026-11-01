@@ -292,6 +292,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	user.LastLoginAt = &now
+	s.log.Info("login", "ign", user.IGN, "ip", ip, "client", client)
 	writeJSON(w, http.StatusOK, loginResponse{Token: token, ExpiresAt: expires, User: user})
 	return nil
 }

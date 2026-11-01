@@ -117,7 +117,34 @@ func (s *Server) routes() {
 }
 
 // Handler is the complete HTTP handler, including the host name check.
-func (s *Server) Handler() http.Handler { return s.hostCheck(s.mux) }
+func (s *Server) Handler() http.Handler { return s.requestLog(s.hostCheck(s.mux)) }
+
+// requestLog logs every request at debug level (LOG_LEVEL=debug); otherwise it adds nothing.
+func (s *Server) requestLog(next http.Handler) http.Handler {
+	if !s.log.Enabled(context.Background(), slog.LevelDebug) {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		if r.URL.Path == "/api/v1/health" && rec.status == http.StatusOK {
+			return // the Docker health check, every 30 seconds
+		}
+		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
+			"ms", time.Since(start).Milliseconds(), "ip", s.clientIP(r), "bytesIn", r.ContentLength)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
 
 // RunMaintenance clears expired sessions and rate limit counters until ctx is done.
 func (s *Server) RunMaintenance(ctx context.Context) {

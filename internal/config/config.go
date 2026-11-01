@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"strconv"
@@ -21,6 +22,8 @@ type Config struct {
 	// TrustedProxies may set X-Forwarded-For / X-Real-IP. Requests from anywhere else are taken at face value.
 	TrustedProxies []netip.Prefix
 	SessionTTL     time.Duration
+	// LogLevel: debug also logs every request; warn only problems.
+	LogLevel slog.Level
 }
 
 func (c Config) Addr() string { return ":" + strconv.Itoa(c.Port) }
@@ -63,6 +66,10 @@ func FromLookup(get func(string) string) (Config, error) {
 		return cfg, fmt.Errorf("SESSION_DAYS must be a positive number")
 	}
 	cfg.SessionTTL = time.Duration(days) * 24 * time.Hour
+
+	if err := cfg.LogLevel.UnmarshalText([]byte(value("LOG_LEVEL", "info"))); err != nil {
+		return cfg, fmt.Errorf("LOG_LEVEL must be debug, info, warn or error")
+	}
 
 	return cfg, nil
 }

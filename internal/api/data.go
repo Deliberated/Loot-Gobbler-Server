@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Deliberated/Loot-Gobbler-Server/internal/store"
@@ -54,7 +56,35 @@ func (s *Server) getData(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeJSON(w, http.StatusOK, dataResponse{Seq: seq, Items: items})
+
+	var size int
+	var summary []string
+	for kind, item := range items {
+		size += len(item.Data)
+		summary = append(summary, kind+"@"+strconv.FormatInt(item.Revision, 10))
+	}
+	sort.Strings(summary)
+	if len(summary) == 0 {
+		summary = []string{"none"}
+	}
+	what := "data"
+	if !withData {
+		what = "revisions only"
+	}
+	s.log.Info("sync download", "ign", user.IGN, "what", what, "kinds", strings.Join(summary, ","), "size", formatSize(size))
 	return nil
+}
+
+// formatSize shows a byte count the way people read it (812 B, 14.2 KiB, 1.3 MiB).
+func formatSize(n int) string {
+	switch {
+	case n < 1024:
+		return strconv.Itoa(n) + " B"
+	case n < 1024*1024:
+		return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " KiB"
+	default:
+		return strconv.FormatFloat(float64(n)/(1024*1024), 'f', 1, 64) + " MiB"
+	}
 }
 
 type putDataResponse struct {
@@ -104,6 +134,8 @@ func (s *Server) putData(w http.ResponseWriter, r *http.Request) error {
 			currentRev = current.Revision
 		}
 		if currentRev != *req.BaseRevision {
+			s.log.Info("sync conflict, client will merge and retry", "ign", user.IGN, "kind", kind,
+				"clientRevision", *req.BaseRevision, "serverRevision", currentRev)
 			return &apiError{Status: http.StatusConflict, Code: "revision_conflict",
 				Message: "The server has a newer version of this data", Current: current}
 		}
@@ -123,5 +155,6 @@ func (s *Server) putData(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeJSON(w, http.StatusOK, resp)
+	s.log.Info("sync upload", "ign", user.IGN, "kind", kind, "revision", resp.Revision, "size", formatSize(compact.Len()))
 	return nil
 }

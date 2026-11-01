@@ -11,6 +11,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env to your domain}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       SESSION_DAYS: ${SESSION_DAYS:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - loot-gobbler-data:/data
     ports:

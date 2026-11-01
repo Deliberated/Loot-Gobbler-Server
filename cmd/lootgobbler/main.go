@@ -31,12 +31,12 @@ func main() {
 	if len(os.Args) > 1 {
 		cmd = os.Args[1]
 	}
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg, err := config.FromEnv()
 	if err != nil {
-		log.Error("invalid configuration", "err", err)
+		slog.Error("invalid configuration", "err", err)
 		os.Exit(1)
 	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 
 	switch cmd {
 	case "serve":
