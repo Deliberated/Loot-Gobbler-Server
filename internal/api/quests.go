@@ -73,6 +73,7 @@ type sampleDoc struct {
 
 type playerActivity struct {
 	collection collectionDoc
+	drops      []itemDrop // from the drop log: kept when the collection is cleared
 	runs       []runDoc
 	samples    [][]sampleDoc // per character, oldest first
 }
@@ -84,6 +85,9 @@ func (s *Server) activity(ctx context.Context, userID int64) (*playerActivity, e
 	}
 	a := &playerActivity{}
 	json.Unmarshal(items["collection"].Data, &a.collection)
+	if a.drops, err = s.drops(ctx, userID); err != nil {
+		return nil, err
+	}
 	json.Unmarshal(items["dps_history"].Data, &a.runs)
 	var chars map[string]struct {
 		Samples []sampleDoc `json:"samples"`
@@ -119,16 +123,15 @@ func (a *playerActivity) progress(typ string, p store.QuestParams, from, to time
 	var n int64
 	switch typ {
 	case "drops":
-		for _, e := range a.collection {
-			for _, f := range e.History {
-				enchants := f.Enchants
-				if f.EnchantIDs != nil {
-					enchants = len(f.EnchantIDs)
-				}
-				if f.Source == "drop" && in(findTime(f)) && matches(f.Where, p.Dungeon) && enchants >= p.MinEnchants &&
-					(p.Bag == "" || strings.EqualFold(bagColor(f.Bag), p.Bag) || strings.EqualFold(f.Bag, p.Bag)) {
-					n++
-				}
+		for _, d := range a.drops {
+			f := d.findDoc
+			enchants := f.Enchants
+			if f.EnchantIDs != nil {
+				enchants = len(f.EnchantIDs)
+			}
+			if in(findTime(f)) && matches(f.Where, p.Dungeon) && enchants >= p.MinEnchants &&
+				(p.Bag == "" || strings.EqualFold(bagColor(f.Bag), p.Bag) || strings.EqualFold(f.Bag, p.Bag)) {
+				n++
 			}
 		}
 	case "new_items":

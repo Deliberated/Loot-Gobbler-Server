@@ -71,6 +71,29 @@ func errNoGuild() error {
 }
 
 // guildOf returns the requester's guild and its members (by name). Guild names are compared case-insensitively.
+// itemDrop is one logged drop of a player: the item and the find as the client reported it.
+type itemDrop struct {
+	itemID int
+	findDoc
+}
+
+// drops is everything the player's client ever reported dropping (the drop log), newest first. Unlike the synced
+// collection it never loses entries, so the guild views keep a player's drops after they clear their collection.
+func (s *Server) drops(ctx context.Context, userID int64) ([]itemDrop, error) {
+	logged, err := store.Drops(ctx, s.store.DB(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]itemDrop, 0, len(logged))
+	for _, d := range logged {
+		var f findDoc
+		if json.Unmarshal(d.Data, &f) == nil {
+			out = append(out, itemDrop{itemID: d.ItemID, findDoc: f})
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) guildOf(ctx context.Context, user *store.User) (string, []guildMember, error) {
 	docs, err := store.DocsOfKind(ctx, s.store.DB(), "profile")
 	if err != nil {
@@ -262,24 +285,12 @@ func (s *Server) guildDrops(w http.ResponseWriter, r *http.Request) error {
 	}
 	drops := []guildDrop{}
 	for _, m := range members {
-		items, err := store.ListData(ctx, s.store.DB(), m.ID, []string{"collection"}, true)
+		logged, err := s.drops(ctx, m.ID)
 		if err != nil {
 			return err
 		}
-		var coll collectionDoc
-		if json.Unmarshal(items["collection"].Data, &coll) != nil {
-			continue
-		}
-		for id, e := range coll {
-			itemID, err := strconv.Atoi(id)
-			if err != nil {
-				continue
-			}
-			for _, f := range e.History {
-				if f.Source == "drop" {
-					drops = append(drops, guildDrop{UserID: m.ID, IGN: m.IGN, ItemID: itemID, findDoc: f})
-				}
-			}
+		for _, d := range logged {
+			drops = append(drops, guildDrop{UserID: m.ID, IGN: m.IGN, ItemID: d.itemID, findDoc: d.findDoc})
 		}
 	}
 	sort.SliceStable(drops, func(i, j int) bool { return drops[i].Time > drops[j].Time })

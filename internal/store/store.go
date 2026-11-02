@@ -43,6 +43,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err := backfillDrops(context.Background(), s); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("fill the drop log: %w", err)
+	}
 	return s, nil
 }
 

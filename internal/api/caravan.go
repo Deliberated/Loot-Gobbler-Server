@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -89,32 +88,27 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 
 	rows := make([]caravanMember, 0, len(members))
 	for _, m := range members {
-		items, err := store.ListData(ctx, s.store.DB(), m.ID, []string{"collection", "characters"}, true)
+		items, err := store.ListData(ctx, s.store.DB(), m.ID, []string{"characters"}, true)
+		if err != nil {
+			return err
+		}
+		logged, err := s.drops(ctx, m.ID)
 		if err != nil {
 			return err
 		}
 		row := caravanMember{guildMember: m, ByBag: map[string]int{}, Items: []caravanItem{}}
-		var coll collectionDoc
-		if json.Unmarshal(items["collection"].Data, &coll) == nil {
-			for id, e := range coll {
-				itemID, err := strconv.Atoi(id)
-				if err != nil {
-					continue
-				}
-				for _, f := range e.History {
-					if f.Source != "drop" || !inRange(f.Time, since) {
-						continue
-					}
-					color := bagColor(f.Bag)
-					row.ByBag[color]++
-					row.Total++
-					enchants := f.Enchants
-					if f.EnchantIDs != nil {
-						enchants = len(f.EnchantIDs)
-					}
-					row.Items = append(row.Items, caravanItem{ItemID: itemID, Enchants: enchants, Bag: color, Time: f.Time, Where: f.Where})
-				}
+		for _, d := range logged {
+			if !inRange(d.Time, since) {
+				continue
 			}
+			color := bagColor(d.Bag)
+			row.ByBag[color]++
+			row.Total++
+			enchants := d.Enchants
+			if d.EnchantIDs != nil {
+				enchants = len(d.EnchantIDs)
+			}
+			row.Items = append(row.Items, caravanItem{ItemID: d.itemID, Enchants: enchants, Bag: color, Time: d.Time, Where: d.Where})
 		}
 		sort.SliceStable(row.Items, func(i, j int) bool { return row.Items[i].Time > row.Items[j].Time })
 		if len(row.Items) > 0 {

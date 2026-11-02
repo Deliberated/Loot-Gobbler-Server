@@ -149,6 +149,9 @@ func (s *Server) putData(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		resp.Seq, err = store.PutData(ctx, q, user.ID, kind, resp.Revision, compact.Bytes(), now)
+		if err == nil && kind == "collection" {
+			_, err = store.RecordDrops(ctx, q, user.ID, compact.Bytes()) // kept even if the collection is cleared later
+		}
 		return err
 	})
 	if err != nil {

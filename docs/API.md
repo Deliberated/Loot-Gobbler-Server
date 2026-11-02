@@ -120,7 +120,7 @@ PUT /me/data/collection
 
 ## Guild views
 
-Players are grouped by the in-game guild their client reports in the `profile` document (`{"ign", "guild", "guildRank", "updatedAt"}`, synced like any other kind). Guild names are compared ignoring case and are shown as the highest-ranked member spells them. Everything is computed from members' synced documents, and each player only sees their own guild. Until a player's guild is known, these endpoints answer `409 no_guild`.
+Players are grouped by the in-game guild their client reports in the `profile` document (`{"ign", "guild", "guildRank", "updatedAt"}`, synced like any other kind). Guild names are compared ignoring case and are shown as the highest-ranked member spells them. Everything is computed from members' synced documents, and each player only sees their own guild. Drops (recent drops, loot caravan, drop quests) come from the server's drop log instead: every drop a client has uploaded in its `collection` is kept there, so a player clearing or editing their collection later does not take drops away. Until a player's guild is known, these endpoints answer `409 no_guild`.
 
 | Method | Path | Result |
 |---|---|---|
