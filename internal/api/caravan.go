@@ -22,10 +22,11 @@ const (
 var caravanRanges = map[string]time.Duration{"week": 7 * 24 * time.Hour, "month": 30 * 24 * time.Hour, "all": 0}
 
 type caravanItem struct {
-	ItemID int    `json:"itemId"`
-	Bag    string `json:"bag"`
-	Time   string `json:"time"`
-	Where  string `json:"where"`
+	ItemID   int    `json:"itemId"`
+	Enchants int    `json:"enchants"` // -1 if unknown
+	Bag      string `json:"bag"`
+	Time     string `json:"time"`
+	Where    string `json:"where"`
 }
 
 type caravanCharacter struct {
@@ -107,7 +108,11 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 					color := bagColor(f.Bag)
 					row.ByBag[color]++
 					row.Total++
-					row.Items = append(row.Items, caravanItem{ItemID: itemID, Bag: color, Time: f.Time, Where: f.Where})
+					enchants := f.Enchants
+					if f.EnchantIDs != nil {
+						enchants = len(f.EnchantIDs)
+					}
+					row.Items = append(row.Items, caravanItem{ItemID: itemID, Enchants: enchants, Bag: color, Time: f.Time, Where: f.Where})
 				}
 			}
 		}
