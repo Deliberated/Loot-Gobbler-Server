@@ -16,7 +16,8 @@ func TestGuildLooks(t *testing.T) {
 
 	// Bob saved his look with his visit; Carl's client is older and only has his characters
 	bob.put("dungeon_visits", []any{
-		map[string]any{"dungeon": "The Nest", "start": 5_000_000, "durationMs": 600_000,
+		map[string]any{"dungeon": "The Nest", "start": 5_000_000, "durationMs": 600_000, "maxHp": 900,
+			"hitTime": []int{1000, 200_000}, "hitDamage": []int{50, 80},
 			"look": map[string]any{"player": "Bob", "classType": 819, "skin": 65011, "tex1": 7, "tex2": 9}},
 	})
 	carl.put("dungeon_visits", []any{map[string]any{"dungeon": "The Nest", "start": 5_000_000, "durationMs": 600_000}})
@@ -30,15 +31,28 @@ func TestGuildLooks(t *testing.T) {
 
 	looks := admin.expect(200, "GET", "/api/v1/guild/looks?dungeon=The%20Nest&from=5100000&to=5500000", nil).body["looks"].([]any)
 	got := map[string]map[string]any{}
+	carlVisit := false
 	for _, l := range looks {
 		m := l.(map[string]any)
+		if m["player"] == "Carl" && m["source"] == "visit" {
+			carlVisit = true // his visit without a look still counts for the hits
+			continue
+		}
 		got[m["player"].(string)] = m
+	}
+	if !carlVisit {
+		t.Fatalf("Carl's visit missing: %v", looks)
 	}
 	if len(got) != 2 || got["Dave"] != nil {
 		t.Fatalf("looks: %v", looks)
 	}
 	if b := got["Bob"]; b["source"] != "visit" || b["skin"] != float64(65011) || b["tex2"] != float64(9) {
 		t.Fatalf("Bob: %v", b)
+	}
+	// his hits timed from the asked start: the one long before the run is left out
+	if b := got["Bob"]; b["maxHp"] != float64(900) || len(b["hitAt"].([]any)) != 1 ||
+		b["hitAt"].([]any)[0] != float64(100_000) || b["hitDamage"].([]any)[0] != float64(80) {
+		t.Fatalf("Bob's hits: %v", b)
 	}
 	if c := got["Carl"]; c["source"] != "character" || c["skin"] != float64(901) || c["alive"] != true {
 		t.Fatalf("Carl: %v", c)
