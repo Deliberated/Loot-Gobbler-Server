@@ -67,3 +67,27 @@ func TestGuildLooks(t *testing.T) {
 	}
 	admin.expect(400, "GET", "/api/v1/guild/looks?dungeon=The%20Nest", nil)
 }
+
+// Runs of one dungeon done back to back: the next one starts within the slack of the asked one, and is first in
+// the list (newest first), but the hits come from the run that shares the asked time.
+func TestGuildLooksBackToBack(t *testing.T) {
+	e := newEnv(t, nil)
+	admin := e.newAdmin()
+	bob := e.newUser(admin, "Bob", "203.0.113.2")
+	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10})
+	bob.put("dungeon_visits", []any{
+		map[string]any{"dungeon": "Ocean Trench", "start": 1_170_000, "durationMs": 116_000, "maxHp": 900,
+			"hitTime": []int{5000}, "hitDamage": []int{30}},
+		map[string]any{"dungeon": "Ocean Trench", "start": 1_000_000, "durationMs": 141_000, "maxHp": 900,
+			"hitTime": []int{20_000, 90_000}, "hitDamage": []int{40, 60}},
+	})
+	looks := admin.expect(200, "GET", "/api/v1/guild/looks?dungeon=Ocean%20Trench&from=1001000&to=1141000", nil).body["looks"].([]any)
+	if len(looks) != 1 {
+		t.Fatalf("looks: %v", looks)
+	}
+	b := looks[0].(map[string]any)
+	if hits := b["hitDamage"].([]any); len(hits) != 2 || hits[0] != float64(40) || hits[1] != float64(60) {
+		t.Fatalf("Bob's hits come from the wrong run: %v", b)
+	}
+}

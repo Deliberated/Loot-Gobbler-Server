@@ -125,20 +125,24 @@ func (s *Server) guildLooks(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// runVisit is the member's visit of the dungeon overlapping [from, to], or nil.
+// runVisit is the member's visit of the dungeon that overlaps [from, to] the most, or nil. Runs of the same
+// dungeon done back to back can both be within the slack of the asked run; the one shared longest is that run.
 func runVisit(data json.RawMessage, dungeon string, from, to int64) *visitLookDoc {
 	var visits []visitLookDoc
 	if json.Unmarshal(data, &visits) != nil {
 		return nil
 	}
+	var best *visitLookDoc
+	var bestOverlap int64
 	for i, v := range visits {
 		end := v.Start + v.DurationMs
-		if !strings.EqualFold(v.Dungeon, dungeon) {
+		if !strings.EqualFold(v.Dungeon, dungeon) || v.Start > to+lookSlackMs || end < from-lookSlackMs {
 			continue
 		}
-		if v.Start <= to+lookSlackMs && end >= from-lookSlackMs {
-			return &visits[i]
+		overlap := min(end, to) - max(v.Start, from) // negative: only within the slack, by that far
+		if best == nil || overlap > bestOverlap {
+			best, bestOverlap = &visits[i], overlap
 		}
 	}
-	return nil
+	return best
 }
