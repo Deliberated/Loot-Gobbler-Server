@@ -154,6 +154,8 @@ type leaderRow struct {
 	Characters int   `json:"characters"` // living characters
 	Maxed      int   `json:"maxed"`      // living characters with all 8 stats maxed
 	Points     int   `json:"points"`     // quest points this month
+	// every drop ever logged, for the item score (only in the leaderboard)
+	Tally []tallyEntry `json:"tally,omitempty"`
 }
 
 type leaderboardResponse struct {
@@ -242,6 +244,15 @@ func (s *Server) guildLeaderboard(w http.ResponseWriter, r *http.Request) error 
 			return err
 		}
 		row.Points = points[m.ID]
+		logged, err := s.drops(ctx, m.ID)
+		if err != nil {
+			return err
+		}
+		tally := tallier{}
+		for _, d := range logged {
+			tally.add(d)
+		}
+		row.Tally = tally.entries()
 		rows = append(rows, row)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Items > rows[j].Items })

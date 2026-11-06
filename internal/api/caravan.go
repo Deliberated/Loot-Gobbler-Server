@@ -42,6 +42,7 @@ type caravanMember struct {
 	ByBag     map[string]int    `json:"byBag"` // bag color ("White", "Orange", ...; boosted counts as its color) -> items
 	Total     int               `json:"total"` // all items found
 	Items     []caravanItem     `json:"items"` // newest first, at most 120
+	Tally     []tallyEntry      `json:"tally"` // all items of the range, for the score
 	LastDrop  string            `json:"lastDrop,omitempty"`
 	Character *caravanCharacter `json:"character,omitempty"` // most played in the range; nil if no character is known
 }
@@ -97,6 +98,7 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		row := caravanMember{guildMember: m, ByBag: map[string]int{}, Items: []caravanItem{}}
+		tally := tallier{}
 		for _, d := range logged {
 			if !inRange(d.Time, since) {
 				continue
@@ -109,7 +111,9 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 				enchants = len(d.EnchantIDs)
 			}
 			row.Items = append(row.Items, caravanItem{ItemID: d.itemID, Enchants: enchants, Bag: color, Time: d.Time, Where: d.Where})
+			tally.add(d)
 		}
+		row.Tally = tally.entries()
 		sort.SliceStable(row.Items, func(i, j int) bool { return row.Items[i].Time > row.Items[j].Time })
 		if len(row.Items) > 0 {
 			row.LastDrop = row.Items[0].Time
