@@ -35,6 +35,9 @@ type visitLookDoc struct {
 	MaxHP      int      `json:"maxHp"`
 	HitTime    []int64  `json:"hitTime"` // ms after the visit's start
 	HitDamage  []int    `json:"hitDamage"`
+	Dealt      []int64  `json:"dealt"`     // damage dealt to enemies, per second after the visit's start
+	QuickItem  []int    `json:"quickItem"` // the items used from a quick slot, in order
+	Moved      []int    `json:"moved"`     // tenths of a tile walked, per second after the visit's start
 }
 
 type characterLookDoc struct {
@@ -45,7 +48,9 @@ type characterLookDoc struct {
 
 // runLook is one answer: from the member's own visit of that run ("visit": its look, which is empty for visits
 // saved before looks were, and the hits they took, at ms after the asked "from"), or one of their characters as it
-// looks now ("character", with alive and lastPlayed so the client can pick the likeliest of a class).
+// looks now ("character", with alive and lastPlayed so the client can pick the likeliest of a class). A visit also
+// tells the damage the member dealt in it, the items they used from a quick slot, and how far they walked per second
+// (moved, its first second starting moveAt ms after "from"); none of these from older clients.
 type runLook struct {
 	lookDoc
 	Source     string  `json:"source"`
@@ -54,6 +59,10 @@ type runLook struct {
 	MaxHP      int     `json:"maxHp,omitempty"`
 	HitAt      []int64 `json:"hitAt,omitempty"`
 	HitDamage  []int   `json:"hitDamage,omitempty"`
+	Dealt      int64   `json:"dealt,omitempty"`
+	QuickUsed  []int   `json:"quickUsed,omitempty"`
+	MoveAt     int64   `json:"moveAt,omitempty"`
+	Moved      []int   `json:"moved,omitempty"`
 }
 
 type runLooksResponse struct {
@@ -103,6 +112,13 @@ func (s *Server) guildLooks(w http.ResponseWriter, r *http.Request) error {
 					e.HitAt = append(e.HitAt, at)
 					e.HitDamage = append(e.HitDamage, v.HitDamage[i])
 				}
+			}
+			for _, d := range v.Dealt {
+				e.Dealt += d
+			}
+			e.QuickUsed = v.QuickItem
+			if len(v.Moved) > 0 {
+				e.MoveAt, e.Moved = v.Start-from, v.Moved
 			}
 			resp.Looks = append(resp.Looks, e)
 			if v.Look != nil && v.Look.ClassType > 0 {
