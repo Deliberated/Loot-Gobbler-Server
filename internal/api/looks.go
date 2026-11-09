@@ -37,6 +37,7 @@ type visitLookDoc struct {
 	HitDamage  []int    `json:"hitDamage"`
 	Dealt      []int64  `json:"dealt"`     // damage dealt to enemies, per second after the visit's start
 	QuickItem  []int    `json:"quickItem"` // the items used from a quick slot, in order
+	QuickTime  []int64  `json:"quickTime"` // when each was used, ms after the visit's start
 	Moved      []int    `json:"moved"`     // tenths of a tile walked, per second after the visit's start
 }
 
@@ -49,7 +50,7 @@ type characterLookDoc struct {
 // runLook is one answer: from the member's own visit of that run ("visit": its look, which is empty for visits
 // saved before looks were, and the hits they took, at ms after the asked "from"), or one of their characters as it
 // looks now ("character", with alive and lastPlayed so the client can pick the likeliest of a class). A visit also
-// tells the damage the member dealt in it, the items they used from a quick slot, and how far they walked per second
+// tells the damage the member dealt in it, the items they used from a quick slot (and when), and how far they walked per second
 // (moved, its first second starting moveAt ms after "from"); none of these from older clients.
 type runLook struct {
 	lookDoc
@@ -61,6 +62,7 @@ type runLook struct {
 	HitDamage  []int   `json:"hitDamage,omitempty"`
 	Dealt      int64   `json:"dealt,omitempty"`
 	QuickUsed  []int   `json:"quickUsed,omitempty"`
+	QuickAt    []int64 `json:"quickAt,omitempty"` // when each was used, ms after the asked "from"
 	MoveAt     int64   `json:"moveAt,omitempty"`
 	Moved      []int   `json:"moved,omitempty"`
 }
@@ -117,6 +119,12 @@ func (s *Server) guildLooks(w http.ResponseWriter, r *http.Request) error {
 				e.Dealt += d
 			}
 			e.QuickUsed = v.QuickItem
+			if len(v.QuickTime) == len(v.QuickItem) && len(v.QuickItem) > 0 {
+				e.QuickAt = make([]int64, len(v.QuickTime))
+				for i, t := range v.QuickTime {
+					e.QuickAt[i] = v.Start + t - from
+				}
+			}
 			if len(v.Moved) > 0 {
 				e.MoveAt, e.Moved = v.Start-from, v.Moved
 			}

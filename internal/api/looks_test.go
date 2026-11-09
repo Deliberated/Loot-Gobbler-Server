@@ -18,7 +18,7 @@ func TestGuildLooks(t *testing.T) {
 	bob.put("dungeon_visits", []any{
 		map[string]any{"dungeon": "The Nest", "start": 5_000_000, "durationMs": 600_000, "maxHp": 900,
 			"hitTime": []int{1000, 200_000}, "hitDamage": []int{50, 80}, "dealt": []int{100, 0, 250},
-			"quickItem": []int{2793, 2793, 2794}, "moved": []int{0, 12, 30},
+			"quickItem": []int{2793, 2793, 2794}, "quickTime": []int{150_000, 160_000, 300_000}, "moved": []int{0, 12, 30},
 			"look": map[string]any{"player": "Bob", "classType": 819, "skin": 65011, "tex1": 7, "tex2": 9}},
 	})
 	carl.put("dungeon_visits", []any{map[string]any{"dungeon": "The Nest", "start": 5_000_000, "durationMs": 600_000}})
@@ -56,6 +56,7 @@ func TestGuildLooks(t *testing.T) {
 		t.Fatalf("Bob's hits: %v", b)
 	}
 	if b := got["Bob"]; b["dealt"] != float64(350) || len(b["quickUsed"].([]any)) != 3 ||
+		len(b["quickAt"].([]any)) != 3 || b["quickAt"].([]any)[0] != float64(50_000) ||
 		b["moveAt"] != float64(-100_000) || len(b["moved"].([]any)) != 3 {
 		t.Fatalf("Bob's damage dealt and quick slot uses: %v", b)
 	}
