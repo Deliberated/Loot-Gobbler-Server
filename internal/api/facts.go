@@ -15,7 +15,8 @@ import (
 // their characters (also the dead ones, as their client last saw them), with the look of the character that completed
 // it most. The rest covers the last few days (3 unless asked otherwise): characters that died, fame gained, damage
 // dealt and taken in dungeons, exaltations earned there, the hits taken for the time spent in them (how well they
-// dodged), the items they found and how many different characters they played. With each member the look of the character they played last. What the clients make of it (the guild's
+// dodged), the items they found and how many different characters they played; besides, how many ST sets they have
+// complete (counted by their client, which knows the sets). With each member the look of the character they played last. What the clients make of it (the guild's
 // biggest dungeon lover, ...) is theirs.
 
 const (
@@ -70,6 +71,7 @@ type memberFacts struct {
 	Look     *lookDoc         `json:"look,omitempty"`     // the character they played last
 	Loot     int              `json:"loot"`               // items they found (their drop log)
 	Played   int              `json:"played"`             // different characters they played
+	StSets   int              `json:"stSets"`             // ST sets complete in their collection; -1 unknown
 }
 
 type factsResponse struct {
@@ -99,11 +101,17 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 	since := s.now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
 	resp := factsResponse{Days: days, Members: []memberFacts{}}
 	for _, m := range members {
-		items, err := store.ListData(ctx, s.store.DB(), m.ID, []string{"characters", "dungeon_visits"}, true)
+		items, err := store.ListData(ctx, s.store.DB(), m.ID, []string{"characters", "dungeon_visits", "profile"}, true)
 		if err != nil {
 			return err
 		}
-		f := memberFacts{UserID: m.ID, IGN: m.IGN}
+		f := memberFacts{UserID: m.ID, IGN: m.IGN, StSets: -1}
+		var prof struct {
+			StSets *int `json:"stSets"`
+		}
+		if json.Unmarshal(items["profile"].Data, &prof) == nil && prof.StSets != nil {
+			f.StSets = *prof.StSets
+		}
 		var chars map[string]characterFactsDoc
 		if json.Unmarshal(items["characters"].Data, &chars) == nil {
 			if fav, ok := favoriteOf(chars); ok {

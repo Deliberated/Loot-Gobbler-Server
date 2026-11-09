@@ -13,7 +13,7 @@ func TestGuildFacts(t *testing.T) {
 	dave := e.newUser(admin, "Dave", "203.0.113.4") // another guild
 
 	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
-	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10, "stSets": 4})
 	carl.put("profile", map[string]any{"ign": "Carl", "guild": "Gobblers", "guildRank": 10})
 	dave.put("profile", map[string]any{"ign": "Dave", "guild": "Others", "guildRank": 40})
 
@@ -66,7 +66,7 @@ func TestGuildFacts(t *testing.T) {
 	}
 	if b["deaths"] != float64(1) || b["fame"] != float64(350) || b["dealt"] != float64(350) || b["taken"] != float64(130) ||
 		b["hits"] != float64(2) || b["inMs"] != float64(600_000) || b["exalts"] != float64(2) ||
-		b["loot"] != float64(2) || b["played"] != float64(2) {
+		b["loot"] != float64(2) || b["played"] != float64(2) || b["stSets"] != float64(4) {
 		t.Fatalf("Bob: %v", b)
 	}
 	if l := b["look"].(map[string]any); l["classType"] != float64(798) || l["skin"] != float64(901) {
@@ -75,7 +75,7 @@ func TestGuildFacts(t *testing.T) {
 	if h := got["Hoster"]["favorite"].(map[string]any); h["dungeon"] != "Lost Halls" || h["count"] != float64(5) {
 		t.Fatalf("Hoster: %v", h)
 	}
-	if c := got["Carl"]; c["favorite"] != nil || c["deaths"] != float64(0) {
+	if c := got["Carl"]; c["favorite"] != nil || c["deaths"] != float64(0) || c["stSets"] != float64(-1) {
 		t.Fatalf("Carl: %v", c)
 	}
 	admin.expect(400, "GET", "/api/v1/guild/facts?days=99", nil)
