@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -12,28 +13,54 @@ func TestGuildFacts(t *testing.T) {
 	carl := e.newUser(admin, "Carl", "203.0.113.3")
 	dave := e.newUser(admin, "Dave", "203.0.113.4") // another guild
 
+	now := time.Now().UnixMilli()
+	day := int64(24 * 3600 * 1000)
+
 	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
-	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10, "stSets": 4})
+	// Bob saw exaltation progress at a login yesterday (a second one a week ago is too old), and completed two ST
+	// sets: one yesterday, one long ago
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10,
+		"exaltChanges": []map[string]int64{
+			{"t": now - day, "classType": 798, "stat": 0, "before": 0, "after": 30},
+			{"t": now - 7*day, "classType": 798, "stat": 1, "before": 0, "after": 75}},
+		"stSetsDone": []int64{now - day, now - 30*day}})
 	carl.put("profile", map[string]any{"ign": "Carl", "guild": "Gobblers", "guildRank": 10})
 	dave.put("profile", map[string]any{"ign": "Dave", "guild": "Others", "guildRank": 40})
 
-	now := time.Now().UnixMilli()
-	day := int64(24 * 3600 * 1000)
-	// Bob: 30 Nests over two characters (the dead one counts too), the Knight did most of them. The Trickster died
-	// yesterday after gaining 300 fame (from 100 before the 3 days); an older death is not counted.
+	// Bob: the Trickster died yesterday after gaining 300 fame (from 100 before the 3 days), the Knight gained 50,
+	// the Wizard played nothing (an older death is not counted, no fame gained either)
 	bob.put("characters", map[string]any{
 		"1": map[string]any{"classType": 804, "alive": false, "lastPlayed": now - day,
-			"dungeons": map[string]int{"The Nest": 10, "Mad Lab": 12},
-			"samples":  []map[string]int64{{"t": now - 5*day, "fame": 100}, {"t": now - 2*day, "fame": 250}, {"t": now - day, "fame": 400}}},
+			"samples": []map[string]int64{{"t": now - 5*day, "fame": 100}, {"t": now - 2*day, "fame": 250}, {"t": now - day, "fame": 400}}},
 		"2": map[string]any{"classType": 798, "skin": 901, "tex1": 3, "alive": true, "lastPlayed": now,
-			"dungeons": map[string]int{"The Nest": 20},
-			"samples":  []map[string]int64{{"t": now - day, "fame": 1000}, {"t": now, "fame": 1050}}},
-		"3": map[string]any{"classType": 782, "alive": false, "lastPlayed": now - 10*day},
+			"samples": []map[string]int64{{"t": now - day, "fame": 1000}, {"t": now, "fame": 1050}}},
+		"3": map[string]any{"classType": 782, "alive": true, "lastPlayed": now - day,
+			"samples": []map[string]int64{{"t": now - day, "fame": 500}}},
 	})
+	// two completed Nests (the later one in a Priest look), a Nest not completed, a Mad Lab a week ago
 	bob.put("dungeon_visits", []any{
-		map[string]any{"dungeon": "The Nest", "start": now - day, "durationMs": 600_000, "dealt": []int{100, 250}, "hitDamage": []int{50, 80},
+		map[string]any{"dungeon": "The Nest", "start": now - 2*day, "durationMs": 600_000, "completed": true,
+			"look": map[string]any{"classType": 798}, "dealt": []int{100, 250}, "hitDamage": []int{50, 80},
 			"exalts": []map[string]int{{"classType": 798, "stat": 2, "before": 4, "after": 16}, {"classType": 798, "stat": 3, "before": 16, "after": 17}}},
-		map[string]any{"dungeon": "Mad Lab", "start": now - 6*day, "dealt": []int{9999}, "hitDamage": []int{9999}},
+		map[string]any{"dungeon": "The Nest", "start": now - day, "durationMs": 60_000, "completed": true,
+			"look": map[string]any{"classType": 784, "skin": 77}},
+		map[string]any{"dungeon": "The Nest", "start": now - day + 1000, "durationMs": 60_000, "completed": false},
+		map[string]any{"dungeon": "Mad Lab", "start": now - 6*day, "durationMs": 600_000, "completed": true,
+			"dealt": []int{9999}, "hitDamage": []int{9999}},
+	})
+	// the exaltation progress now: the Knight's stat 0 went on to 50 since the login
+	bob.put("exalts", map[string][]int{"798": {50, 75, 16, 17, 0, 0, 0, 0}})
+	// boss DPS: 1000 and 3000 at best in the two runs in the time; a guild hall visit and an old run do not count
+	bob.put("dps_history", []any{
+		map[string]any{"dungeon": "The Nest", "start": now - 2*day, "bosses": []any{
+			map[string]any{"fightMs": 10_000, "players": []any{map[string]any{"damage": 10_000, "me": true}}},
+			map[string]any{"fightMs": 10_000, "players": []any{map[string]any{"damage": 5_000, "me": true}, map[string]any{"damage": 90_000}}}}},
+		map[string]any{"dungeon": "The Nest", "start": now - day, "bosses": []any{
+			map[string]any{"fightMs": 2_000, "players": []any{map[string]any{"damage": 6_000, "me": true}}}}},
+		map[string]any{"dungeon": "{s.guildhall}", "start": now - day, "guildHall": true, "bosses": []any{
+			map[string]any{"fightMs": 1_000, "players": []any{map[string]any{"damage": 99_000, "me": true}}}}},
+		map[string]any{"dungeon": "Mad Lab", "start": now - 6*day, "bosses": []any{
+			map[string]any{"fightMs": 1_000, "players": []any{map[string]any{"damage": 99_000, "me": true}}}}},
 	})
 	// Bob found two items yesterday (two copies from one bag) and one a week ago
 	recent := map[string]any{"at": now - day, "time": "2026-01-01T10:00:00", "source": "drop", "where": "The Nest", "bag": "White"}
@@ -42,10 +69,7 @@ func TestGuildFacts(t *testing.T) {
 		"100": map[string]any{"count": 2, "history": []any{recent, recent}},
 		"200": map[string]any{"count": 1, "history": []any{old}},
 	})
-	admin.put("characters", map[string]any{
-		"1": map[string]any{"classType": 782, "alive": true, "dungeons": map[string]int{"Lost Halls": 5}},
-	})
-	carl.put("characters", map[string]any{"1": map[string]any{"classType": 802, "alive": true}}) // an older client
+	carl.put("characters", map[string]any{"1": map[string]any{"classType": 802, "alive": true}})
 	dave.put("characters", map[string]any{"1": map[string]any{"classType": 768, "alive": false, "lastPlayed": now}})
 
 	body := admin.expect(200, "GET", "/api/v1/guild/facts", nil).body
@@ -61,22 +85,38 @@ func TestGuildFacts(t *testing.T) {
 	}
 	b := got["Bob"]
 	fav := b["favorite"].(map[string]any)
-	if fav["dungeon"] != "The Nest" || fav["count"] != float64(30) || fav["classType"] != float64(798) || fav["skin"] != float64(901) {
+	if fav["dungeon"] != "The Nest" || fav["count"] != float64(2) || fav["classType"] != float64(784) || fav["skin"] != float64(77) {
 		t.Fatalf("Bob's favorite: %v", fav)
 	}
-	if b["deaths"] != float64(1) || b["fame"] != float64(350) || b["dealt"] != float64(350) || b["taken"] != float64(130) ||
-		b["hits"] != float64(2) || b["inMs"] != float64(600_000) || b["exalts"] != float64(2) ||
-		b["loot"] != float64(2) || b["played"] != float64(2) || b["stSets"] != float64(4) {
+	if b["deaths"] != float64(1) || b["fame"] != float64(350) || b["played"] != float64(2) || b["dealt"] != float64(350) ||
+		b["taken"] != float64(130) || b["hits"] != float64(2) || b["inMs"] != float64(720_000) || b["loot"] != float64(2) ||
+		b["stSets"] != float64(1) || b["runs"] != float64(2) || math.Abs(b["peakDps"].(float64)-2000) > 0.01 {
 		t.Fatalf("Bob: %v", b)
+	}
+	// exalts: stat 0 from 0 to 50 = 4 (5, 15, 30, 50), stat 2 from 4 to 16 = 2, stat 3 16 -> 17 = 0
+	if b["exalts"] != float64(6) {
+		t.Fatalf("Bob's exalts: %v", b["exalts"])
 	}
 	if l := b["look"].(map[string]any); l["classType"] != float64(798) || l["skin"] != float64(901) {
 		t.Fatalf("Bob's look: %v", l)
 	}
-	if h := got["Hoster"]["favorite"].(map[string]any); h["dungeon"] != "Lost Halls" || h["count"] != float64(5) {
-		t.Fatalf("Hoster: %v", h)
-	}
-	if c := got["Carl"]; c["favorite"] != nil || c["deaths"] != float64(0) || c["stSets"] != float64(-1) {
+	// the Mad Lab a week ago does not count: two Nests are all Bob completed in the time, so he loves them
+	if c := got["Carl"]; c["favorite"] != nil || c["deaths"] != float64(0) || c["stSets"] != float64(0) || c["runs"] != float64(0) {
 		t.Fatalf("Carl: %v", c)
 	}
 	admin.expect(400, "GET", "/api/v1/guild/facts?days=99", nil)
+}
+
+func TestFavoriteOf(t *testing.T) {
+	// 18 of 20 completed runs (90%) are Nests: loved
+	if f := favoriteOf(map[string]int{"The Nest": 18, "Mad Lab": 2}); f == nil || f.Dungeon != "The Nest" || f.Count != 18 {
+		t.Fatalf("90%%: %v", f)
+	}
+	// 17 of 20 (85%) is not more than 85%: none
+	if f := favoriteOf(map[string]int{"The Nest": 17, "Mad Lab": 3}); f != nil {
+		t.Fatalf("85%%: %v", f)
+	}
+	if f := favoriteOf(map[string]int{}); f != nil {
+		t.Fatalf("none: %v", f)
+	}
 }
