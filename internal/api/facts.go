@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Deliberated/Loot-Gobbler-Server/internal/store"
@@ -51,6 +52,8 @@ type visitFactsDoc struct {
 	Start      int64            `json:"start"`
 	DurationMs int64            `json:"durationMs"`
 	Completed  *bool            `json:"completed"` // as the client judged it; nil from older clients
+	RunStart   int64            `json:"runStart"`  // the DPS run of it (its start), 0 = no boss fought
+	Victory    bool             `json:"victory"`   // the game said "Victory"
 	Look       *lookDoc         `json:"look"`
 	Dealt      []int64          `json:"dealt"`     // damage dealt to enemies, per second
 	HitDamage  []int64          `json:"hitDamage"` // every hit taken
@@ -68,6 +71,8 @@ type runFactsDoc struct {
 	Start     int64 `json:"start"`
 	GuildHall bool  `json:"guildHall"`
 	Bosses    []struct {
+		MaxHP   int64 `json:"maxHp"`
+		EndHP   *int64 `json:"endHp"` // -1 or missing in older runs
 		FightMs int64 `json:"fightMs"`
 		Players []struct {
 			Damage int64 `json:"damage"`
@@ -101,9 +106,17 @@ type memberFacts struct {
 	StSets   int              `json:"stSets"`             // ST sets completed
 }
 
+// bestFriends is the pair of members who did the most dungeon runs together.
+type bestFriends struct {
+	A     int64 `json:"a"` // user ids (A's name comes first by name)
+	B     int64 `json:"b"`
+	Count int   `json:"count"`
+}
+
 type factsResponse struct {
 	Days    int           `json:"days"`
 	Members []memberFacts `json:"members"`
+	Friends *bestFriends  `json:"friends,omitempty"` // none if no two members ran a dungeon together
 }
 
 // guildFacts answers GET /api/v1/guild/facts?days=3.
@@ -127,6 +140,7 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 	}
 	since := s.now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
 	resp := factsResponse{Days: days, Members: []memberFacts{}}
+	visitsOf := map[int64][]visitFactsDoc{} // each member's visits in the time, for the best friends
 	for _, m := range members {
 		items, err := store.ListData(ctx, s.store.DB(), m.ID,
 			[]string{"characters", "dungeon_visits", "profile", "dps_history", "exalts"}, true)
@@ -154,6 +168,13 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
+		var runs []runFactsDoc
+		_ = json.Unmarshal(items["dps_history"].Data, &runs)
+		runByStart := map[int64]*runFactsDoc{}
+		for i := range runs {
+			runByStart[runs[i].Start] = &runs[i]
+		}
+
 		var visits []visitFactsDoc
 		var changes []exaltChangeDoc // exaltation progress in the time, from the visits and the profile
 		if json.Unmarshal(items["dungeon_visits"].Data, &visits) == nil {
@@ -176,7 +197,7 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 					e.T = v.Start
 					changes = append(changes, e)
 				}
-				if v.Completed != nil && *v.Completed && v.Dungeon != "" {
+				if completed(v, runByStart[v.RunStart]) && v.Dungeon != "" {
 					done[v.Dungeon]++
 					if v.Look != nil && v.Start >= latest[v.Dungeon] {
 						latest[v.Dungeon], looks[v.Dungeon] = v.Start, v.Look
@@ -209,8 +230,7 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 		_ = json.Unmarshal(items["exalts"].Data, &progress)
 		f.Exalts = exaltsEarned(changes, progress)
 
-		var runs []runFactsDoc
-		if json.Unmarshal(items["dps_history"].Data, &runs) == nil {
+		{
 			var sum float64
 			for _, r := range runs {
 				if r.Start < since || r.GuildHall {
@@ -235,15 +255,83 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 				f.Loot++
 			}
 		}
+		for _, v := range visits {
+			if v.Start >= since && v.Dungeon != "" {
+				visitsOf[m.ID] = append(visitsOf[m.ID], v)
+			}
+		}
 		resp.Members = append(resp.Members, f)
 	}
 	sort.SliceStable(resp.Members, func(i, j int) bool { return resp.Members[i].IGN < resp.Members[j].IGN })
+	resp.Friends = bestFriendsOf(resp.Members, visitsOf)
 	writeJSON(w, http.StatusOK, resp)
 	return nil
 }
 
 // loverShare is how much of their completed runs one dungeon must be for a member to love it.
 const loverShare = 0.85
+
+// bestFriendsOf is the pair of members with the most dungeon runs together (a visit of one overlapping a visit of the
+// other to the same dungeon), ties going to the first pair by name; nil if no two members ran one together.
+func bestFriendsOf(members []memberFacts, visitsOf map[int64][]visitFactsDoc) *bestFriends {
+	var best *bestFriends
+	for i := 0; i < len(members); i++ { // members are in name order
+		for j := i + 1; j < len(members); j++ {
+			n := together(visitsOf[members[i].UserID], visitsOf[members[j].UserID])
+			if n > 0 && (best == nil || n > best.Count) {
+				best = &bestFriends{A: members[i].UserID, B: members[j].UserID, Count: n}
+			}
+		}
+	}
+	return best
+}
+
+// together counts the runs of a that b was in too: same dungeon, at overlapping times.
+func together(a, b []visitFactsDoc) int {
+	n := 0
+	for _, x := range a {
+		for _, y := range b {
+			if strings.EqualFold(x.Dungeon, y.Dungeon) && x.Start < y.Start+max(y.DurationMs, 1) && y.Start < x.Start+max(x.DurationMs, 1) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// completed tells whether a visit was completed: as its client judged it (newer clients), else as the client would:
+// the game said "Victory", or the run's main boss (the one with the most life) was left at 8% of its life or less;
+// for runs that did not keep that, the damage everyone did to it reached 88% of its life.
+func completed(v visitFactsDoc, run *runFactsDoc) bool {
+	if v.Completed != nil {
+		return *v.Completed
+	}
+	if v.Victory {
+		return true
+	}
+	if run == nil || v.RunStart == 0 {
+		return false
+	}
+	main := -1
+	for i, b := range run.Bosses {
+		if main < 0 || b.MaxHP > run.Bosses[main].MaxHP {
+			main = i
+		}
+	}
+	if main < 0 || run.Bosses[main].MaxHP <= 0 {
+		return false
+	}
+	b := run.Bosses[main]
+	if b.EndHP != nil && *b.EndHP >= 0 {
+		return float64(*b.EndHP) <= 0.08*float64(b.MaxHP)
+	}
+	var damage int64
+	for _, p := range b.Players {
+		damage += p.Damage
+	}
+	return len(b.Players) <= 15 && float64(damage) >= 0.88*float64(b.MaxHP)
+}
 
 // favoriteOf is the dungeon the member loves: the one completed most, if it is more than 85% of all their completed
 // runs (ties: by name, so it does not flicker); nil if there is none.
@@ -275,8 +363,9 @@ func bestBossDps(r runFactsDoc) float64 {
 	return best
 }
 
-// exaltsEarned counts the exaltations the changes made: per class and stat, from the lowest progress it went up from
-// to where it is now (or the highest it was seen going to).
+// exaltsEarned counts the exaltation progress the changes made, in points as the game shows them (each boss kill or
+// potion that counts): per class and stat, from the lowest progress it went up from to where it is now (or the
+// highest it was seen going to), up to the last tier (75: nothing counts beyond it).
 func exaltsEarned(changes []exaltChangeDoc, progress map[string][]int) int {
 	type key struct{ class, stat int }
 	from, to := map[key]int{}, map[key]int{}
@@ -293,18 +382,8 @@ func exaltsEarned(changes []exaltChangeDoc, progress map[string][]int) int {
 		if p := progress[fmt.Sprint(k.class)]; k.stat >= 0 && k.stat < len(p) {
 			now = max(now, p[k.stat])
 		}
-		n += max(0, exaltLevel(now)-exaltLevel(b))
-	}
-	return n
-}
-
-// exaltLevel is how many exaltations that much progress of one stat is.
-func exaltLevel(progress int) int {
-	n := 0
-	for _, t := range exaltThresholds {
-		if progress >= t {
-			n++
-		}
+		top := exaltThresholds[len(exaltThresholds)-1]
+		n += max(0, min(now, top)-min(b, top))
 	}
 	return n
 }

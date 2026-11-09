@@ -93,8 +93,8 @@ func TestGuildFacts(t *testing.T) {
 		b["stSets"] != float64(1) || b["runs"] != float64(2) || math.Abs(b["peakDps"].(float64)-2000) > 0.01 {
 		t.Fatalf("Bob: %v", b)
 	}
-	// exalts: stat 0 from 0 to 50 = 4 (5, 15, 30, 50), stat 2 from 4 to 16 = 2, stat 3 16 -> 17 = 0
-	if b["exalts"] != float64(6) {
+	// exalts in progress points: stat 0 from 0 to 50 = 50, stat 2 from 4 to 16 = 12, stat 3 16 -> 17 = 1
+	if b["exalts"] != float64(63) {
 		t.Fatalf("Bob's exalts: %v", b["exalts"])
 	}
 	if l := b["look"].(map[string]any); l["classType"] != float64(798) || l["skin"] != float64(901) {
@@ -118,5 +118,53 @@ func TestFavoriteOf(t *testing.T) {
 	}
 	if f := favoriteOf(map[string]int{}); f != nil {
 		t.Fatalf("none: %v", f)
+	}
+}
+
+func TestCompletedFromRun(t *testing.T) {
+	life := func(n int64) *int64 { return &n }
+	run := func(maxHP int64, endHP *int64) *runFactsDoc {
+		r := &runFactsDoc{Start: 7}
+		r.Bosses = append(r.Bosses, struct {
+			MaxHP   int64  `json:"maxHp"`
+			EndHP   *int64 `json:"endHp"`
+			FightMs int64  `json:"fightMs"`
+			Players []struct {
+				Damage int64 `json:"damage"`
+				Me     bool  `json:"me"`
+			} `json:"players"`
+		}{MaxHP: maxHP, EndHP: endHP})
+		return r
+	}
+	old := visitFactsDoc{RunStart: 7} // an older client: no completed mark
+	if !completed(old, run(1000, life(50))) {
+		t.Fatal("boss left at 5%: completed")
+	}
+	if completed(old, run(1000, life(600))) {
+		t.Fatal("boss left at 60%: not completed")
+	}
+	if completed(visitFactsDoc{}, nil) || !completed(visitFactsDoc{Victory: true}, nil) {
+		t.Fatal("no run: only a victory counts")
+	}
+	no := false
+	if completed(visitFactsDoc{RunStart: 7, Completed: &no}, run(1000, life(0))) {
+		t.Fatal("the client's own judgement wins")
+	}
+}
+
+func TestBestFriends(t *testing.T) {
+	members := []memberFacts{{UserID: 1, IGN: "Ann"}, {UserID: 2, IGN: "Bob"}, {UserID: 3, IGN: "Cid"}}
+	nest := func(start, ms int64) visitFactsDoc { return visitFactsDoc{Dungeon: "The Nest", Start: start, DurationMs: ms} }
+	visits := map[int64][]visitFactsDoc{
+		1: {nest(0, 100), nest(200, 100), nest(400, 100)},
+		2: {nest(50, 100), nest(250, 100), {Dungeon: "Mad Lab", Start: 400, DurationMs: 100}}, // with Ann twice
+		3: {nest(410, 50)},                                                                      // with Ann once
+	}
+	f := bestFriendsOf(members, visits)
+	if f == nil || f.A != 1 || f.B != 2 || f.Count != 2 {
+		t.Fatalf("best friends: %+v", f)
+	}
+	if bestFriendsOf(members, map[int64][]visitFactsDoc{1: {nest(0, 10)}}) != nil {
+		t.Fatal("nobody ran together")
 	}
 }
