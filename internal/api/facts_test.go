@@ -107,6 +107,31 @@ func TestGuildFacts(t *testing.T) {
 	admin.expect(400, "GET", "/api/v1/guild/facts?days=99", nil)
 }
 
+func TestFameGainedIn(t *testing.T) {
+	type sample = struct {
+		T    int64 `json:"t"`
+		Fame int64 `json:"fame"`
+	}
+	chars := map[string]characterFactsDoc{
+		// fame went from 100 to 260 while in the dungeon (1000 to 2000); the sample after leaving does not count
+		"1": {Samples: []sample{{T: 500, Fame: 100}, {T: 1500, Fame: 180}, {T: 2000, Fame: 260}, {T: 3000, Fame: 900}}},
+		// only less, and on another character
+		"2": {Samples: []sample{{T: 900, Fame: 10}, {T: 1800, Fame: 50}}},
+		// played only long after
+		"3": {Samples: []sample{{T: 9000, Fame: 5}, {T: 9500, Fame: 5000}}},
+	}
+	if got := fameGainedIn(visitFactsDoc{Start: 1000, DurationMs: 1000}, chars); got != 160 {
+		t.Fatalf("gained: %d", got)
+	}
+	// samples starting inside the visit: the first one counts as the fame on entering
+	if got := fameGainedIn(visitFactsDoc{Start: 9200, DurationMs: 1000}, chars); got != 4995 {
+		t.Fatalf("from the first sample: %d", got)
+	}
+	if got := fameGainedIn(visitFactsDoc{Start: 5000, DurationMs: 1000}, chars); got != 0 {
+		t.Fatalf("nothing played: %d", got)
+	}
+}
+
 func TestFavoriteOf(t *testing.T) {
 	// 18 of 20 completed runs (90%) are Nests: loved
 	if f := favoriteOf(map[string]int{"The Nest": 18, "Mad Lab": 2}); f == nil || f.Dungeon != "The Nest" || f.Count != 18 {

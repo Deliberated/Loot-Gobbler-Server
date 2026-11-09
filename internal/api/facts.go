@@ -15,7 +15,8 @@ import (
 // Guild facts: numbers about every guildmate (the requester too) over the last few days (3 unless asked otherwise),
 // which the clients rank to show who stands out: the dungeon they love (more than 85% of their completed runs; with
 // the look they had in the latest of those runs), characters that died, fame gained, damage dealt and taken in dungeons and the time and hits there,
-// their best boss DPS per run, exaltations earned, items found, characters that gained fame, and ST sets completed.
+// their best boss DPS per run, exaltations earned, items found, characters that gained fame, ST sets completed, and the
+// dungeon visit they gained the most fame in.
 // With each member the look of the character they played last. What the clients make of it is theirs.
 
 const (
@@ -104,6 +105,13 @@ type memberFacts struct {
 	Loot     int              `json:"loot"`               // items they found (their drop log)
 	Played   int              `json:"played"`             // characters that gained fame
 	StSets   int              `json:"stSets"`             // ST sets completed
+	BestRun  *bestRun         `json:"bestRun,omitempty"`  // the dungeon visit they gained the most fame in; none without fame gained in one
+}
+
+// bestRun is the dungeon visit a member's character gained the most fame in.
+type bestRun struct {
+	Dungeon string `json:"dungeon"`
+	Fame    int64  `json:"fame"`
 }
 
 // bestFriends is the pair of members who did the most dungeon runs together.
@@ -196,6 +204,11 @@ func (s *Server) guildFacts(w http.ResponseWriter, r *http.Request) error {
 				for _, e := range v.Exalts {
 					e.T = v.Start
 					changes = append(changes, e)
+				}
+				if v.Dungeon != "" {
+					if gained := fameGainedIn(v, chars); gained > 0 && (f.BestRun == nil || gained > f.BestRun.Fame) {
+						f.BestRun = &bestRun{Dungeon: v.Dungeon, Fame: gained}
+					}
 				}
 				if completed(v, runByStart[v.RunStart]) && v.Dungeon != "" {
 					done[v.Dungeon]++
@@ -386,6 +399,40 @@ func exaltsEarned(changes []exaltChangeDoc, progress map[string][]int) int {
 		n += max(0, min(now, top)-min(b, top))
 	}
 	return n
+}
+
+// fameGainedIn is the fame gained in a dungeon visit, as the client counts it: the most any one character's fame went
+// up between entering and leaving (its fame samples), 0 if none did.
+func fameGainedIn(v visitFactsDoc, chars map[string]characterFactsDoc) int64 {
+	end := v.Start + max(0, v.DurationMs)
+	var best int64
+	for _, c := range chars {
+		if len(c.Samples) == 0 || c.Samples[len(c.Samples)-1].T < v.Start || c.Samples[0].T > end {
+			continue
+		}
+		a, okA := fameAt(c, v.Start)
+		b, okB := fameAt(c, end)
+		if okA && okB {
+			best = max(best, b-a)
+		}
+	}
+	return best
+}
+
+// fameAt is the character's fame at a time: the last sample at or before it, else the first one after it.
+func fameAt(c characterFactsDoc, t int64) (int64, bool) {
+	var at int64
+	found := false
+	for _, s := range c.Samples { // in time order
+		if s.T <= t {
+			at, found = s.Fame, true
+		} else if found {
+			return at, true
+		} else {
+			return s.Fame, true
+		}
+	}
+	return at, found
 }
 
 // fameSince is the fame the character gained since then: its latest fame against the last one before (or, without
