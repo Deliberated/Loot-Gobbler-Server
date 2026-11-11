@@ -130,6 +130,14 @@ func TestFameGainedIn(t *testing.T) {
 	if got := fameGainedIn(visitFactsDoc{Start: 5000, DurationMs: 1000}, chars); got != 0 {
 		t.Fatalf("nothing played: %d", got)
 	}
+	// fame went up while nothing was sampled (25 minutes before entering): the first sample inside shows it, and it
+	// must not count for this visit (it once made a 39-fame Ocean Trench a 201-fame one)
+	gap := map[string]characterFactsDoc{
+		"1": {Samples: []sample{{T: 0, Fame: 26742}, {T: 1_500_002, Fame: 26904}, {T: 1_590_000, Fame: 26943}}},
+	}
+	if got := fameGainedIn(visitFactsDoc{Start: 1_500_000, DurationMs: 90_000}, gap); got != 39 {
+		t.Fatalf("after a gap: %d", got)
+	}
 }
 
 func TestFavoriteOf(t *testing.T) {

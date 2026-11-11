@@ -402,37 +402,49 @@ func exaltsEarned(changes []exaltChangeDoc, progress map[string][]int) int {
 }
 
 // fameGainedIn is the fame gained in a dungeon visit, as the client counts it: the most any one character's fame went
-// up between entering and leaving (its fame samples), 0 if none did.
+// up between entering and leaving (its fame samples, see fameIn), 0 if none did.
 func fameGainedIn(v visitFactsDoc, chars map[string]characterFactsDoc) int64 {
 	end := v.Start + max(0, v.DurationMs)
 	var best int64
 	for _, c := range chars {
-		if len(c.Samples) == 0 || c.Samples[len(c.Samples)-1].T < v.Start || c.Samples[0].T > end {
-			continue
-		}
-		a, okA := fameAt(c, v.Start)
-		b, okB := fameAt(c, end)
-		if okA && okB {
-			best = max(best, b-a)
+		if gained, ok := fameIn(c, v.Start, end); ok {
+			best = max(best, gained)
 		}
 	}
 	return best
 }
 
-// fameAt is the character's fame at a time: the last sample at or before it, else the first one after it.
-func fameAt(c characterFactsDoc, t int64) (int64, bool) {
-	var at int64
-	found := false
+// entrySampleMs is how old a sample from before a visit may be to still count as the fame the character entered with.
+const entrySampleMs = 15_000
+
+// fameIn is the fame a character gained between start and end. It starts from the last sample before start only if
+// that was taken just before (samples come every few seconds while fame changes); otherwise from the first sample
+// inside. Fame that went up while nothing was sampled shows up in the next sample and must not count for this visit.
+// ok is false when the samples do not show the start.
+func fameIn(c characterFactsDoc, start, end int64) (gained int64, ok bool) {
+	var a, b int64
+	haveA, haveB := false, false
 	for _, s := range c.Samples { // in time order
-		if s.T <= t {
-			at, found = s.Fame, true
-		} else if found {
-			return at, true
-		} else {
-			return s.Fame, true
+		switch {
+		case s.T <= start:
+			a, haveA = s.Fame, start-s.T <= entrySampleMs
+		case s.T <= end:
+			if !haveA {
+				a, haveA = s.Fame, true
+			}
+			b, haveB = s.Fame, true
+		}
+		if s.T > end {
+			break
 		}
 	}
-	return at, found
+	if !haveA {
+		return 0, false
+	}
+	if !haveB {
+		return 0, true
+	}
+	return max(0, b-a), true
 }
 
 // fameSince is the fame the character gained since then: its latest fame against the last one before (or, without
