@@ -53,6 +53,7 @@ type limits struct {
 	tokenIP      *ratelimit.Limiter // wrong role tokens per IP
 	tokenUser    *ratelimit.Limiter // wrong role tokens per account
 	password     *ratelimit.Limiter // wrong current password per account
+	resetIP      *ratelimit.Limiter // wrong password reset codes per IP
 	ping         *ratelimit.Limiter // connection tests per IP (each one is logged)
 }
 
@@ -64,12 +65,13 @@ func newLimits() *limits {
 		tokenIP:      ratelimit.New(3, time.Hour),
 		tokenUser:    ratelimit.New(3, time.Hour),
 		password:     ratelimit.New(5, 15*time.Minute),
+		resetIP:      ratelimit.New(5, time.Hour),
 		ping:         ratelimit.New(10, time.Minute),
 	}
 }
 
 func (l *limits) all() []*ratelimit.Limiter {
-	return []*ratelimit.Limiter{l.loginIP, l.loginAccount, l.register, l.tokenIP, l.tokenUser, l.password, l.ping}
+	return []*ratelimit.Limiter{l.loginIP, l.loginAccount, l.register, l.tokenIP, l.tokenUser, l.password, l.resetIP, l.ping}
 }
 
 func New(opts Options) *Server {
@@ -94,6 +96,7 @@ func (s *Server) routes() {
 	s.handle("POST /api/v1/auth/register", s.register)
 	s.handle("POST /api/v1/auth/login", s.login)
 	s.handle("POST /api/v1/auth/logout", s.logout)
+	s.handle("POST /api/v1/auth/reset-password", s.resetPassword)
 
 	s.handle("GET /api/v1/me", s.me)
 	s.handle("PATCH /api/v1/me/password", s.changePassword)
@@ -128,6 +131,7 @@ func (s *Server) routes() {
 	s.handle("DELETE /api/v1/admin/users/{id}", s.deleteUser)
 	s.handle("PATCH /api/v1/admin/users/{id}/role", s.changeRole)
 	s.handle("DELETE /api/v1/admin/users/{id}/sessions", s.signOutUser)
+	s.handle("POST /api/v1/admin/users/{id}/password-reset", s.createPasswordReset)
 	s.handle("GET /api/v1/admin/moderator-tokens", s.listModeratorTokens)
 	s.handle("POST /api/v1/admin/moderator-tokens", s.createModeratorToken)
 	s.handle("DELETE /api/v1/admin/moderator-tokens/{id}", s.revokeModeratorToken)
@@ -179,6 +183,10 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 			}
 			if _, err := store.PurgeExpiredSessions(ctx, s.store.DB(), s.nowMs()); err != nil && ctx.Err() == nil {
 				s.log.Error("purging expired sessions failed", "err", err)
+			}
+			week := s.now().Add(-7 * 24 * time.Hour).UnixMilli() // reset codes: kept a week after use or expiry
+			if err := store.DeleteOldPasswordResets(ctx, s.store.DB(), week); err != nil && ctx.Err() == nil {
+				s.log.Error("purging old password reset codes failed", "err", err)
 			}
 		}
 	}

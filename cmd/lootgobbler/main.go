@@ -2,6 +2,7 @@
 //
 //	lootgobbler serve        run the server (default)
 //	lootgobbler admin-token  print a new admin claim token (invalidates older unused ones)
+//	lootgobbler reset-password <IGN>  print a password reset code for that player (any rank, the root admin too)
 //	lootgobbler health       exit 0 if the local server answers (Docker health check)
 //	lootgobbler version      print the version
 package main
@@ -43,12 +44,18 @@ func main() {
 		err = serve(cfg, log)
 	case "admin-token":
 		err = adminToken(cfg)
+	case "reset-password":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: lootgobbler reset-password <IGN>")
+			os.Exit(2)
+		}
+		err = resetPassword(cfg, os.Args[2])
 	case "health":
 		err = health(cfg)
 	case "version":
 		fmt.Println(version)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: lootgobbler [serve | admin-token | health | version]")
+		fmt.Fprintln(os.Stderr, "usage: lootgobbler [serve | admin-token | reset-password <IGN> | health | version]")
 		os.Exit(2)
 	}
 	if err != nil {
@@ -148,6 +155,34 @@ func printAdminToken(token string) {
 ==========================================================================
 
 `, token)
+}
+
+func resetPassword(cfg config.Config, ign string) error {
+	st, err := openStore(cfg)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	code, user, err := api.IssueConsoleResetCode(context.Background(), st, ign, time.Now())
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("no active account with the IGN %q", ign)
+	}
+	fmt.Printf(`
+==========================================================================
+  PASSWORD RESET CODE for %s (single use, valid %d hours)
+
+      %s
+
+  In Loot Gobbler, on the server login choose "Forgot password?", then
+  enter the IGN, this code and a new password. Making a new code
+  replaces this one.
+==========================================================================
+
+`, user.IGN, int(api.ResetCodeValidity.Hours()), code)
+	return nil
 }
 
 func health(cfg config.Config) error {

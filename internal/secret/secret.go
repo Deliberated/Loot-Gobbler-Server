@@ -98,6 +98,34 @@ func NormalizeRoleToken(input string) (canonical string, ok bool) {
 	return s[:3] + body, true
 }
 
+// ResetCodePrefix starts a password reset code (LGR-XXXX-XXXX-XXXX), made for a player who forgot their password.
+const ResetCodePrefix = "LGR"
+
+const resetCodeChars = 12 // 60 random bits: short enough to pass on by hand; single use, bound to one IGN, expiring
+
+// NewResetCode returns a password reset code like LGR-XXXX-XXXX-XXXX.
+func NewResetCode() string {
+	body := crockfordEncoding.EncodeToString(randomBytes(8))[:resetCodeChars]
+	return ResetCodePrefix + "-" + body[0:4] + "-" + body[4:8] + "-" + body[8:12]
+}
+
+// NormalizeResetCode turns user input into the canonical form that is hashed, read as loosely as role tokens (case,
+// dashes and spaces ignored, O as 0, I/L as 1). The prefix may be left out. ok is false if it cannot be a code.
+func NormalizeResetCode(input string) (canonical string, ok bool) {
+	s := strings.ToUpper(strings.NewReplacer("-", "", " ", "", "\t", "").Replace(strings.TrimSpace(input)))
+	s = strings.TrimPrefix(s, ResetCodePrefix)
+	if len(s) != resetCodeChars {
+		return "", false
+	}
+	body := strings.NewReplacer("O", "0", "I", "1", "L", "1").Replace(s)
+	for _, r := range body {
+		if !strings.ContainsRune(crockford, r) {
+			return "", false
+		}
+	}
+	return ResetCodePrefix + body, true
+}
+
 // HashToken returns the SHA-256 hex digest under which a token is stored. Tokens are long and random, so a fast
 // hash is enough; the database never holds a usable token.
 func HashToken(token string) string {

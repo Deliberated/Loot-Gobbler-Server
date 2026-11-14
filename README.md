@@ -53,9 +53,21 @@ Admins create moderator tokens in the client (valid for 24 hours by default, at 
 | | user | moderator | admin | root admin |
 |---|:-:|:-:|:-:|:-:|
 | Use the server, sync own data | ✓ | ✓ | ✓ | ✓ |
-| Accept/deny registrations, remove or sign out users | | ✓ | ✓ | ✓ |
+| Accept/deny registrations, remove or sign out users, make password reset codes | | ✓ | ✓ | ✓ |
 | Create moderator tokens, remove/demote moderators | | | ✓ | ✓ |
 | Promote/demote/remove admins | | | | ✓ |
+
+### Forgotten passwords
+
+A moderator or admin opens the player in the client's user list and makes a **reset code** (`LGR-XXXX-XXXX-XXXX`, single use, 24 hours, only for players ranked below them). They pass it on to the player, who chooses "Forgot password?" at the server login and enters their IGN, the code and a new password. Every session of that player ends. Nobody else ever learns the password.
+
+For anyone, the root admin included, the host can print a code in the console:
+
+```
+docker exec loot-gobbler lootgobbler reset-password <IGN>
+```
+
+Logged-in players change their own password in the client with their current one.
 
 ### Updating
 

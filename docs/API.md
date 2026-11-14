@@ -73,6 +73,19 @@ This is the client's connection test. It needs no body, and you can send a sessi
 
 IGNs are case-insensitive.
 
+### `POST /auth/reset-password`
+
+For a player who forgot their password. A moderator or admin makes a reset code for them (`POST /admin/users/{id}/password-reset`), or the host does in the console (`lootgobbler reset-password <IGN>`, works for the root admin too), and passes it on.
+
+```json
+{ "ign": "Gunshit", "code": "LGR-XXXX-XXXX-XXXX", "newPassword": "at least 8 characters" }
+```
+
+- `204`: the password is set and every session of the player ends; log in with the new password
+- `400 invalid_code` (wrong, expired, used, or for another IGN; one answer for all), `400 bad_request`, `429 rate_limited` (5 wrong codes per hour per IP)
+
+The code is read as loosely as role tokens, and the `LGR` prefix may be left out. It works once, for that IGN only, for 24 hours; a new code replaces an unused older one.
+
 ### Logged in
 
 | Method | Path | Body | Result |
@@ -182,6 +195,7 @@ Finds carry `at` (exact time, epoch ms) since client 0.5; older finds without it
 | GET | `/admin/users` | moderator+ | `{"users": [...]}`: active accounts by name |
 | DELETE | `/admin/users/{id}` | moderator+ | `204`. Only for users ranked below you; never the root admin. `403 insufficient_rank` |
 | DELETE | `/admin/users/{id}/sessions` | moderator+ | `204`: signs that user out everywhere (same rank rules) |
+| POST | `/admin/users/{id}/password-reset` | moderator+ | `201` + `{"code": "LGR-...", "ign", "expiresAt"}`: a one-time code (24 h) for the player to set a new password with (`POST /auth/reset-password`). Shown only here; a new one replaces an unused older one. Same rank rules. |
 | PATCH | `/admin/users/{id}/role` | admin | `{"role": "user"}` demotes a moderator. Only the root admin may set `moderator` or `admin` directly or change admins. `403 root_only` / `insufficient_rank` |
 | GET | `/admin/moderator-tokens` | admin | `{"tokens": [{"id", "note", "createdBy", "createdAt", "expiresAt"}]}`: unused, unexpired tokens |
 | POST | `/admin/moderator-tokens` | admin | Body optional: `{"note": "for Bob", "validHours": 24}` (1–168). `201` + `{"id", "token", "note", "expiresAt"}`. The token is shown only here. |
