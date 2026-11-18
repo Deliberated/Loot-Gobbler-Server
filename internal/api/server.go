@@ -113,6 +113,7 @@ func (s *Server) routes() {
 	s.handle("GET /api/v1/guild/questmaps", s.guildQuestMaps)
 	s.handle("GET /api/v1/guild/looks", s.guildLooks)
 	s.handle("GET /api/v1/guild/facts", s.guildFacts)
+	s.handle("GET /api/v1/guild/upe", s.guildUpe)
 	s.handle("GET /api/v1/scoring", s.getScoring)
 	s.handle("PUT /api/v1/admin/scoring", s.putScoring)
 	s.handle("GET /api/v1/guild/settings", s.getGuildSettings)
