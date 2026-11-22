@@ -66,6 +66,11 @@ func (s *Server) principal(r *http.Request) (*store.User, string, error) {
 	if user == nil || !user.Active() {
 		return nil, "", errUnauthorized("invalid_session", "Session expired, log in again")
 	}
+	if client := clientName(r, ""); client != "" && client != sess.Client {
+		if err := store.SetSessionClient(ctx, s.store.DB(), hash, client); err != nil {
+			return nil, "", err
+		}
+	}
 	if now-sess.LastUsedAt > sessionTouchInterval.Milliseconds() {
 		err := s.store.Tx(ctx, func(q store.Querier) error {
 			return store.TouchSession(ctx, q, hash, now, now+s.cfg.SessionTTL.Milliseconds())
@@ -143,6 +148,28 @@ func (s *Server) badToken(ip string, user *store.User) error {
 }
 
 func userKey(id int64) string { return "user:" + strconv.FormatInt(id, 10) }
+
+// clientHeader names the app making a request and its version, "<app>/<version>", e.g. "rust/0.0.1". The Java app
+// before it only named itself at login ("Loot Gobbler 0.9.2", the fallback).
+const clientHeader = "X-LootGobbler-Client"
+
+// clientName is the app that sent r, for the admins' user list: "Rust v0.0.1", "Java v0.9.2", or as it came (at
+// most 64 characters); fallback (a login's "client") when the header is missing, "" when neither says.
+func clientName(r *http.Request, fallback string) string {
+	c := strings.TrimSpace(r.Header.Get(clientHeader))
+	if c == "" {
+		c = strings.TrimSpace(fallback)
+	}
+	if app, version, ok := strings.Cut(c, "/"); ok && app != "" && version != "" {
+		c = strings.ToUpper(app[:1]) + app[1:] + " v" + strings.TrimPrefix(version, "v")
+	} else if v, ok := strings.CutPrefix(c, "Loot Gobbler "); ok && v != "" {
+		c = "Java v" + strings.TrimPrefix(v, "v")
+	}
+	if len(c) > 64 {
+		c = c[:64]
+	}
+	return c
+}
 
 type credentials struct {
 	IGN      string `json:"ign"`
@@ -278,10 +305,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	token := secret.NewSessionToken()
 	now := s.nowMs()
 	expires := now + s.cfg.SessionTTL.Milliseconds()
-	client := req.Client
-	if len(client) > 64 {
-		client = client[:64]
-	}
+	client := clientName(r, req.Client)
 	err := s.store.Tx(ctx, func(q store.Querier) error {
 		if err := store.TouchLogin(ctx, q, user.ID, now); err != nil {
 			return err

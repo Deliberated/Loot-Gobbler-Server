@@ -46,9 +46,10 @@ func newEnv(t *testing.T, mutate func(*config.Config)) *env {
 
 // client is one player: a session token and the IP the proxy reports for them.
 type client struct {
-	e     *env
-	ip    string
-	token string
+	e       *env
+	ip      string
+	token   string
+	headers map[string]string // sent with every request
 }
 
 func (e *env) client(ip string) *client { return &client{e: e, ip: ip} }
@@ -70,6 +71,9 @@ func (c *client) do(method, path string, body any) response {
 	req.Header.Set("X-Forwarded-For", c.ip) // the test server sees 127.0.0.1, a trusted proxy by default
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

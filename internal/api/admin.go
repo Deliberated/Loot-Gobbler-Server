@@ -112,12 +112,34 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.require(r, store.RoleModerator); err != nil {
 		return err
 	}
-	users, err := store.ListUsers(r.Context(), s.store.DB(), store.StatusActive)
+	ctx := r.Context()
+	users, err := store.ListUsers(ctx, s.store.DB(), store.StatusActive)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, usersResponse{users})
+	clients, err := store.LatestClients(ctx, s.store.DB(), s.nowMs())
+	if err != nil {
+		return err
+	}
+	out := make([]adminUser, len(users))
+	for i, u := range users {
+		c := clients[u.ID]
+		out[i] = adminUser{User: u, Client: c.Client, LastSeenAt: c.LastUsedAt}
+	}
+	writeJSON(w, http.StatusOK, adminUsersResponse{out})
 	return nil
+}
+
+// adminUser is an active account as the admins see it: with the app of the session it used last (the one still
+// logged in) and when that was.
+type adminUser struct {
+	store.User
+	Client     string `json:"client,omitempty"`
+	LastSeenAt int64  `json:"lastSeenAt,omitempty"`
+}
+
+type adminUsersResponse struct {
+	Users []adminUser `json:"users"`
 }
 
 func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) error {
