@@ -19,7 +19,8 @@ func TestGuildUpeRuns(t *testing.T) {
 			map[string]any{"item": 100, "enchants": []int{1, 2}, "at": 2000, "how": "D", "where": "Lost Halls"},
 			map[string]any{"item": 100, "at": 3000, "how": "D", "where": "Snake Pit"},
 		}},
-		"8": map[string]any{"charId": 8, "mode": "gUPE", "marked": true, "brokenAt": 5000, "gathered": []any{}},
+		"8": map[string]any{"charId": 8, "mode": "gUPE", "marked": true, "brokenAt": 5000, "broken": "Equipped a vault item",
+			"notes": []string{"Traded with a guild mate"}, "gathered": []any{}},
 		"9": map[string]any{"charId": 9, "mode": "UPE", "marked": false}, // not a run: left out
 	}})
 	dave.put("upe", map[string]any{"runs": map[string]any{"1": map[string]any{"charId": 1, "mode": "UPE", "marked": true}}})
@@ -35,8 +36,12 @@ func TestGuildUpeRuns(t *testing.T) {
 		t.Fatalf("Bob's runs: %v", b)
 	}
 	lost, wiz := runs[0].(map[string]any), runs[1].(map[string]any) // newest character first
-	if lost["charId"] != 8.0 || lost["lost"] != true || lost["character"] != nil {
+	if lost["charId"] != 8.0 || lost["lost"] != true || lost["character"] != nil || lost["why"] != "Equipped a vault item" ||
+		lost["lostAt"] != 5000.0 || len(lost["notes"].([]any)) != 1 {
 		t.Fatalf("lost run: %v", lost)
+	}
+	if _, ok := wiz["why"]; ok {
+		t.Fatalf("a standing run has no reason: %v", wiz)
 	}
 	g := wiz["gathered"].([]any)
 	if wiz["mode"] != "UPE" || wiz["alive"] != false || wiz["character"].(map[string]any)["className"] != "Wizard" || len(g) != 2 ||

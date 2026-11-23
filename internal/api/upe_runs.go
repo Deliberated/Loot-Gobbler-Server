@@ -26,7 +26,10 @@ type upeRun struct {
 	CharID    int64             `json:"charId"`
 	Mode      string            `json:"mode"`
 	MarkedAt  int64             `json:"markedAt,omitempty"`
-	Lost      bool              `json:"lost"` // a rule was broken
+	Lost      bool              `json:"lost"`             // a rule was broken
+	Why       string            `json:"why,omitempty"`    // which rule, as the client wrote it
+	LostAt    int64             `json:"lostAt,omitempty"` // when
+	Notes     []string          `json:"notes,omitempty"`  // what the client found worth a look (not against the rules)
 	Alive     bool              `json:"alive"`
 	Character *caravanCharacter `json:"character,omitempty"`
 	Gathered  []upeGathered     `json:"gathered"`
@@ -45,11 +48,13 @@ type upeResponse struct {
 // The parts of a synced UPE document ("upe", the client's upe.json) read here.
 type upeRunsDoc struct {
 	Runs map[string]struct {
-		CharID   int64  `json:"charId"`
-		Mode     string `json:"mode"`
-		Marked   bool   `json:"marked"`
-		MarkedAt int64  `json:"markedAt"`
-		BrokenAt int64  `json:"brokenAt"`
+		CharID   int64    `json:"charId"`
+		Mode     string   `json:"mode"`
+		Marked   bool     `json:"marked"`
+		MarkedAt int64    `json:"markedAt"`
+		BrokenAt int64    `json:"brokenAt"`
+		Broken   string   `json:"broken"`
+		Notes    []string `json:"notes"`
 		Gathered []struct {
 			Item     int    `json:"item"`
 			Enchants []int  `json:"enchants"`
@@ -90,6 +95,10 @@ func (s *Server) guildUpeRuns(w http.ResponseWriter, r *http.Request) error {
 					id, _ = strconv.ParseInt(key, 10, 64)
 				}
 				out := upeRun{CharID: id, Mode: run.Mode, MarkedAt: run.MarkedAt, Lost: run.BrokenAt > 0, Gathered: []upeGathered{}}
+				if out.Lost {
+					out.Why, out.LostAt = run.Broken, run.BrokenAt
+				}
+				out.Notes = run.Notes
 				if c, ok := chars[strconv.FormatInt(id, 10)]; ok {
 					character := c.caravanCharacter
 					out.Character = &character
