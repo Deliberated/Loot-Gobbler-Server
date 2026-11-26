@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 // Drop is one logged drop: the item and the find as the client sent it (JSON).
@@ -62,7 +63,7 @@ func RecordDrops(ctx context.Context, q Querier, userID int64, collection []byte
 
 // Drops returns all logged drops of a user, newest first.
 func Drops(ctx context.Context, q Querier, userID int64) ([]Drop, error) {
-	rows, err := q.QueryContext(ctx, "SELECT item_id, data FROM drop_log WHERE user_id = ? ORDER BY time DESC", userID)
+	rows, err := q.QueryContext(ctx, "SELECT item_id, data FROM drop_log WHERE user_id = ? ORDER BY time DESC, id DESC", userID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +73,47 @@ func Drops(ctx context.Context, q Querier, userID int64) ([]Drop, error) {
 		var d Drop
 		var data string
 		if err := rows.Scan(&d.ItemID, &data); err != nil {
+			return nil, err
+		}
+		d.Data = json.RawMessage(data)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// LoggedDrop is one logged drop with its number in the log (which only goes up) and whose it is.
+type LoggedDrop struct {
+	ID     int64
+	UserID int64
+	ItemID int
+	Data   json.RawMessage
+}
+
+// DropsAfter returns the logged drops of the given users numbered above after, in the order they were logged, at most
+// limit of them.
+func DropsAfter(ctx context.Context, q Querier, users []int64, after int64, limit int) ([]LoggedDrop, error) {
+	if len(users) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(users)+2)
+	args = append(args, after)
+	marks := make([]string, len(users))
+	for i, u := range users {
+		marks[i] = "?"
+		args = append(args, u)
+	}
+	args = append(args, limit)
+	rows, err := q.QueryContext(ctx, "SELECT id, user_id, item_id, data FROM drop_log WHERE id > ? AND user_id IN ("+
+		strings.Join(marks, ",")+") ORDER BY id LIMIT ?", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LoggedDrop
+	for rows.Next() {
+		var d LoggedDrop
+		var data string
+		if err := rows.Scan(&d.ID, &d.UserID, &d.ItemID, &data); err != nil {
 			return nil, err
 		}
 		d.Data = json.RawMessage(data)

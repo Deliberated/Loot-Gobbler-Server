@@ -312,6 +312,86 @@ func (s *Server) guildDrops(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// The most drops one answer of the drop log gives, and how many by default.
+const (
+	dropLogDefault = 120
+	dropLogMax     = 500
+)
+
+type loggedDrop struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"userId"`
+	ItemID int   `json:"itemId"`
+	findDoc
+}
+
+type dropLogResponse struct {
+	Guild    string       `json:"guild"`
+	Instance string       `json:"instance"`
+	Drops    []loggedDrop `json:"drops"`
+	More     bool         `json:"more"`
+}
+
+// guildDropLog hands out the guild's drop log after the last drop a client has (`after`, 0 for all), oldest first, a
+// page at a time, so clients keep their own copy and only fetch what is new. `instance` tells this database apart: a
+// copy from another (or from this one started over) is to be thrown away. Drops of players no longer in the guild are
+// not sent; clients leave them out of their copy by the members the caravan lists.
+func (s *Server) guildDropLog(w http.ResponseWriter, r *http.Request) error {
+	user, err := s.require(r, store.RoleUser)
+	if err != nil {
+		return err
+	}
+	q := r.URL.Query()
+	var after int64
+	if v := q.Get("after"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			return errBadRequest("after must be a drop number (0 for all)")
+		}
+		after = n
+	}
+	limit := dropLogDefault
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > dropLogMax {
+			return errBadRequest("limit must be between 1 and 500")
+		}
+		limit = n
+	}
+	ctx := r.Context()
+	guild, members, err := s.guildOf(ctx, user)
+	if err != nil {
+		return err
+	}
+	ids := make([]int64, len(members))
+	for i, m := range members {
+		ids[i] = m.ID
+	}
+	logged, err := store.DropsAfter(ctx, s.store.DB(), ids, after, limit+1)
+	if err != nil {
+		return err
+	}
+	resp := dropLogResponse{Guild: guild, Drops: []loggedDrop{}, More: len(logged) > limit}
+	if resp.More {
+		logged = logged[:limit]
+	}
+	for _, d := range logged {
+		var f findDoc
+		if json.Unmarshal(d.Data, &f) == nil {
+			resp.Drops = append(resp.Drops, loggedDrop{ID: d.ID, UserID: d.UserID, ItemID: d.ItemID, findDoc: f})
+		}
+	}
+	raw, err := store.Setting(ctx, s.store.DB(), "instance")
+	if err != nil {
+		return err
+	}
+	if raw != nil {
+		_ = json.Unmarshal(raw, &resp.Instance)
+	}
+	writeJSON(w, http.StatusOK, resp)
+	return nil
+}
+
 // --- member profile ---
 
 type memberResponse struct {
