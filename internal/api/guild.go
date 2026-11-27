@@ -28,6 +28,7 @@ type profileDoc struct {
 	IGN       string `json:"ign"`
 	Guild     string `json:"guild"`
 	GuildRank int    `json:"guildRank"` // 0 initiate, 10 member, 20 officer, 30 leader, 40 founder
+	Balloon   *int   `json:"balloon"`   // the colour the player picked for their loot caravan balloon (0-8), if any
 }
 
 type guildMember struct {
@@ -35,6 +36,7 @@ type guildMember struct {
 	IGN        string `json:"ign"`
 	GuildRank  int    `json:"guildRank"`
 	LastActive int64  `json:"lastActive,omitempty"` // last upload of any data
+	Balloon    *int   `json:"balloon,omitempty"`    // their balloon's colour (0-8), if they picked one
 }
 
 type guildResponse struct {
@@ -120,7 +122,7 @@ func (s *Server) guildOf(ctx context.Context, user *store.User) (string, []guild
 	for _, d := range docs {
 		p, ok := profiles[d.UserID]
 		if ok && strings.EqualFold(p.Guild, guild) {
-			members = append(members, guildMember{ID: d.UserID, IGN: d.IGN, GuildRank: p.GuildRank, LastActive: last[d.UserID]})
+			members = append(members, guildMember{ID: d.UserID, IGN: d.IGN, GuildRank: p.GuildRank, LastActive: last[d.UserID], Balloon: p.Balloon})
 			if p.GuildRank > nameRank {
 				name, nameRank = p.Guild, p.GuildRank
 			}

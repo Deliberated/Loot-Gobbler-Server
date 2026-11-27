@@ -92,3 +92,21 @@ func TestDropLogPages(t *testing.T) {
 	}
 	bob.expect(400, "GET", "/api/v1/guild/drops/log?limit=501", nil)
 }
+
+// A member's balloon colour, from their profile, comes with the caravan; none picked: none sent.
+func TestCaravanBalloonColour(t *testing.T) {
+	e := newEnv(t, nil)
+	admin := e.newAdmin()
+	bob := e.newUser(admin, "Bob", "203.0.113.2")
+	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10, "balloon": 4})
+	members := bob.expect(200, "GET", "/api/v1/guild/caravan", nil).body["members"].([]any)
+	got := map[string]any{}
+	for _, m := range members {
+		mm := m.(map[string]any)
+		got[mm["ign"].(string)] = mm["balloon"]
+	}
+	if got["Bob"] != 4.0 || got["Hoster"] != nil {
+		t.Fatalf("balloons %v", got)
+	}
+}
