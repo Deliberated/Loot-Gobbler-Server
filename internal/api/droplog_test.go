@@ -99,14 +99,15 @@ func TestCaravanBalloonColour(t *testing.T) {
 	admin := e.newAdmin()
 	bob := e.newUser(admin, "Bob", "203.0.113.2")
 	admin.put("profile", map[string]any{"ign": "Hoster", "guild": "Gobblers", "guildRank": 40})
-	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10, "balloon": 4})
+	bob.put("profile", map[string]any{"ign": "Bob", "guild": "Gobblers", "guildRank": 10, "balloon": 4, "tether": 2})
 	members := bob.expect(200, "GET", "/api/v1/guild/caravan", nil).body["members"].([]any)
-	got := map[string]any{}
+	got, ties := map[string]any{}, map[string]any{}
 	for _, m := range members {
 		mm := m.(map[string]any)
 		got[mm["ign"].(string)] = mm["balloon"]
+		ties[mm["ign"].(string)] = mm["tether"]
 	}
-	if got["Bob"] != 4.0 || got["Hoster"] != nil {
-		t.Fatalf("balloons %v", got)
+	if got["Bob"] != 4.0 || got["Hoster"] != nil || ties["Bob"] != 2.0 || ties["Hoster"] != nil {
+		t.Fatalf("balloons %v, tethers %v", got, ties)
 	}
 }
