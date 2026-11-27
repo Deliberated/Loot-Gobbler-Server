@@ -18,7 +18,8 @@ const (
 	findTimeLayout  = "2006-01-02T15:04:05" // the client's local time, without a zone
 )
 
-var caravanRanges = map[string]time.Duration{"week": 7 * 24 * time.Hour, "month": 30 * 24 * time.Hour, "all": 0}
+// "season": since the current season began (see seasons.go); "all" when no season before it is known.
+var caravanRanges = map[string]time.Duration{"week": 7 * 24 * time.Hour, "month": 30 * 24 * time.Hour, "all": 0, "season": 0}
 
 type caravanItem struct {
 	ItemID   int    `json:"itemId"`
@@ -26,6 +27,7 @@ type caravanItem struct {
 	Bag      string `json:"bag"`
 	Time     string `json:"time"`
 	Where    string `json:"where"`
+	At       int64  `json:"at,omitempty"` // exact time (epoch ms), if the player's client sent it
 }
 
 type caravanCharacter struct {
@@ -50,6 +52,7 @@ type caravanMember struct {
 type caravanResponse struct {
 	Guild   string          `json:"guild"`
 	Range   string          `json:"range"`
+	Season  currentSeason   `json:"season"` // the season running now
 	Members []caravanMember `json:"members"`
 }
 
@@ -75,16 +78,23 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 	}
 	span, ok := caravanRanges[rng]
 	if !ok {
-		return errBadRequest("range must be week, month or all")
+		return errBadRequest("range must be week, month, season or all")
 	}
 	ctx := r.Context()
 	guild, members, err := s.guildOf(ctx, user)
 	if err != nil {
 		return err
 	}
+	season, err := s.currentSeason(ctx)
+	if err != nil {
+		return err
+	}
 	var since time.Time // zero: everything
 	if span > 0 {
 		since = time.Now().Add(-span)
+	}
+	if rng == "season" && season.Start > 0 {
+		since = time.UnixMilli(season.Start)
 	}
 
 	rows := make([]caravanMember, 0, len(members))
@@ -100,7 +110,7 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 		row := caravanMember{guildMember: m, ByBag: map[string]int{}, Items: []caravanItem{}}
 		tally := tallier{}
 		for _, d := range logged {
-			if !inRange(d.Time, since) {
+			if !inRange(d.findDoc, since) {
 				continue
 			}
 			color := bagColor(d.Bag)
@@ -110,7 +120,7 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 			if d.EnchantIDs != nil {
 				enchants = len(d.EnchantIDs)
 			}
-			row.Items = append(row.Items, caravanItem{ItemID: d.itemID, Enchants: enchants, Bag: color, Time: d.Time, Where: d.Where})
+			row.Items = append(row.Items, caravanItem{ItemID: d.itemID, Enchants: enchants, Bag: color, Time: d.Time, Where: d.Where, At: d.At})
 			tally.add(d)
 		}
 		row.Tally = tally.entries()
@@ -133,17 +143,20 @@ func (s *Server) guildCaravan(w http.ResponseWriter, r *http.Request) error {
 		}
 		return strings.ToLower(rows[i].IGN) < strings.ToLower(rows[j].IGN)
 	})
-	writeJSON(w, http.StatusOK, caravanResponse{Guild: guild, Range: rng, Members: rows})
+	writeJSON(w, http.StatusOK, caravanResponse{Guild: guild, Range: rng, Season: season, Members: rows})
 	return nil
 }
 
-// inRange reports whether a find's time is not before since. Find times are the player's local time without a
-// zone; for ranges of a week or more the few hours that can be off do not matter.
-func inRange(t string, since time.Time) bool {
+// inRange reports whether a find was not before since: by its exact time when the client sent one, else by its
+// time, the player's local time without a zone (read as UTC: a few hours off at most).
+func inRange(f findDoc, since time.Time) bool {
 	if since.IsZero() {
 		return true
 	}
-	parsed, err := time.Parse(findTimeLayout, t) // read as UTC
+	if f.At > 0 {
+		return f.At >= since.UnixMilli()
+	}
+	parsed, err := time.Parse(findTimeLayout, f.Time) // read as UTC
 	return err == nil && !parsed.Before(since.UTC())
 }
 
